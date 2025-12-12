@@ -19,14 +19,6 @@ pub struct BwCipher {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct BwProfile {
-    pub email: String,
-    pub premium: bool,
-    #[serde(rename = "privateKey")]
-    pub private_key: String,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct BwSync {
     pub ciphers: Vec<BwCipher>,
     pub profile: BwProfile,
@@ -35,6 +27,14 @@ pub struct BwSync {
 #[derive(Deserialize)]
 pub struct BwToken {
     pub access_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BwProfile {
+    pub email: String,
+    pub premium: bool,
+    #[serde(rename = "privateKey")]
+    pub private_key: String,
 }
 
 pub struct BwApi<'a> {
