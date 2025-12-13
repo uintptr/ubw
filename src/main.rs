@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use log::{LevelFilter, info};
+use log::LevelFilter;
 use rstaples::logging::StaplesLogger;
-use ubw::{api::BwApi, config::BwConfig};
+use ubw::{api::BwApi, config::BwConfig, crypto::BwCrypt};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -31,15 +31,19 @@ async fn main() -> Result<()> {
 
     let config = BwConfig::from_file(&args.config_file)?;
 
-    info!("client_id={}", config.credentials.client_id);
+    let mut api = BwApi::new(&config)?;
 
-    let mut api = BwApi::new(&config);
+    let auth = api.auth().await?;
 
-    api.auth().await?;
+    let crypt = BwCrypt::new(&config, auth)?;
 
     let sync = api.sync().await?;
 
-    dbg!(sync);
+    for c in sync.ciphers.iter() {
+        let name: String = crypt.decrypt(&c.data.name)?.try_into()?;
+        let pass: String = crypt.decrypt(&c.data.password)?.try_into()?;
+        println!("name={name} password={pass}");
+    }
 
     Ok(())
 }

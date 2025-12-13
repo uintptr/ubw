@@ -6,6 +6,10 @@ pub enum Error {
     // 1st party
     //
     AuthNotFoundError,
+    InvalidKDF,
+    DataDirNotFound,
+    CacheFileNotFound,
+    CacheExpired,
     //
     // 2d party
     //

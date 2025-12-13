@@ -1,7 +1,0 @@
-[credentials]
-client_id = "user.3e709f41-99c4-4cbc-8183-47375b9768cf"
-client_secret = "0HUggnDOnnjFdE6ESZUlGIfiXqjDG1"
-password = "oksalaenshow"
-
-[server]
-url = "http://localhost:8000"

@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use log::info;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{config::BwConfig, error::Error};
+use crate::{auth_cache::BwCachedAuth, config::BwConfig};
 
 #[derive(Debug, Deserialize)]
 pub struct BwCipherData {
@@ -24,15 +25,21 @@ pub struct BwSync {
     pub profile: BwProfile,
 }
 
-#[derive(Deserialize)]
-pub struct BwToken {
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct BwAuth {
+    #[serde(rename = "KdfIterations")]
+    pub kdf_iterations: u32,
+    #[serde(rename = "Key")]
+    pub key: String,
     pub access_token: String,
+    pub expires_in: u64,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct BwProfile {
     pub email: String,
     pub premium: bool,
+    pub key: String,
     #[serde(rename = "privateKey")]
     pub private_key: String,
 }
@@ -40,19 +47,25 @@ pub struct BwProfile {
 pub struct BwApi<'a> {
     client: Client,
     config: &'a BwConfig,
-    token: Option<BwToken>,
+    auth: BwAuth,
+    auth_cache: BwCachedAuth,
 }
 
 impl<'a> BwApi<'a> {
-    pub fn new(config: &'a BwConfig) -> Self {
-        Self {
+    pub fn new(config: &'a BwConfig) -> Result<Self> {
+        let auth_cache = BwCachedAuth::new()?;
+
+        Ok(Self {
             client: Client::new(),
             config,
-            token: None,
-        }
+            auth: BwAuth::default(),
+            auth_cache,
+        })
     }
 
-    pub async fn auth(&mut self) -> Result<()> {
+    async fn remote_auth(&mut self) -> Result<BwAuth> {
+        info!("doing remote auth");
+
         let auth_url = format!("{}/identity/connect/token", self.config.server.url);
 
         let mut params = HashMap::new();
@@ -65,37 +78,52 @@ impl<'a> BwApi<'a> {
         params.insert("device_name", "ubw");
         params.insert("device_type", "1");
 
-        let res = self
+        let auth = self
             .client
             .post(auth_url)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .form(&params)
             .send()
             .await?
-            .json::<BwToken>()
+            .json::<BwAuth>()
             .await?;
 
-        self.token = Some(res);
+        Ok(auth)
+    }
 
-        Ok(())
+    fn cached_auth(&self) -> Result<BwAuth> {
+        self.auth_cache.load()
+    }
+
+    pub async fn auth(&mut self) -> Result<&BwAuth> {
+        let auth = match self.cached_auth() {
+            Ok(v) => {
+                info!("cached auth is still usable");
+                v
+            }
+            Err(_) => {
+                let auth = self.remote_auth().await?;
+                // save it for next time
+                let _ = self.auth_cache.save(&auth);
+                auth
+            }
+        };
+
+        self.auth = auth;
+        Ok(&self.auth)
     }
 
     pub async fn sync(&mut self) -> Result<BwSync> {
         let url = format!("{}/api/sync", self.config.server.url);
 
-        if let Some(token) = &self.token {
-            let data = self
-                .client
-                .get(url)
-                .bearer_auth(&token.access_token)
-                .send()
-                .await?
-                .json::<BwSync>()
-                .await?;
-
-            Ok(data)
-        } else {
-            Err(Error::AuthNotFoundError.into())
-        }
+        let data = self
+            .client
+            .get(url)
+            .bearer_auth(&self.auth.access_token)
+            .send()
+            .await?
+            .json::<BwSync>()
+            .await?;
+        Ok(data)
     }
 }

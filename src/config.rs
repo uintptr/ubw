@@ -7,6 +7,8 @@ use serde::Deserialize;
 pub struct BwCredentials {
     pub client_id: String,
     pub client_secret: String,
+    pub email: String,
+    pub password: String,
 }
 
 #[derive(Deserialize)]
