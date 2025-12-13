@@ -11,9 +11,8 @@ pub struct BwCrypt {
 
 impl BwCrypt {
     pub fn new(config: &BwConfig, auth: &BwAuth) -> Result<Self> {
-        let nz_ndf = match NonZero::new(auth.kdf_iterations) {
-            Some(v) => v,
-            None => return Err(Error::InvalidKDF.into()),
+        let Some(nz_ndf) = NonZero::new(auth.kdf_iterations) else {
+            return Err(Error::InvalidKDF.into());
         };
 
         let kdf = Kdf::PBKDF2 { iterations: nz_ndf };

@@ -8,6 +8,8 @@ use anyhow::{Result, anyhow};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 
+const MIN_EXPIRY_SEC: u64 = 30;
+
 use crate::{api::BwAuth, error::Error};
 
 #[derive(Deserialize, Serialize)]
@@ -50,9 +52,12 @@ impl BwCachedAuth {
 
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
-        let expiry = cached_data.ts + cached_data.auth.expires_in;
+        let expiry = cached_data.ts.saturating_add(cached_data.auth.expires_in);
+        let rem_sec = expiry.saturating_sub(now);
 
-        if expiry < now {
+        info!("{} expires in {} seconds", self.file_path.display(), rem_sec);
+
+        if rem_sec <= MIN_EXPIRY_SEC {
             warn!("{} expired", self.file_path.display());
 
             if let Err(e) = fs::remove_file(&self.file_path) {

@@ -22,9 +22,10 @@ struct UserArgs {
 async fn main() -> Result<()> {
     let args = UserArgs::parse();
 
-    let log_level = match args.verbose {
-        true => LevelFilter::Info,
-        false => LevelFilter::Warn,
+    let log_level = if args.verbose {
+        LevelFilter::Info
+    } else {
+        LevelFilter::Warn
     };
 
     StaplesLogger::new().with_colors().with_log_level(log_level).start();
@@ -39,7 +40,7 @@ async fn main() -> Result<()> {
 
     let sync = api.sync().await?;
 
-    for c in sync.ciphers.iter() {
+    for c in &sync.ciphers {
         let name: String = crypt.decrypt(&c.data.name)?.try_into()?;
         let pass: String = crypt.decrypt(&c.data.password)?.try_into()?;
         println!("name={name} password={pass}");

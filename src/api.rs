@@ -96,17 +96,14 @@ impl<'a> BwApi<'a> {
     }
 
     pub async fn auth(&mut self) -> Result<&BwAuth> {
-        let auth = match self.cached_auth() {
-            Ok(v) => {
-                info!("cached auth is still usable");
-                v
-            }
-            Err(_) => {
-                let auth = self.remote_auth().await?;
-                // save it for next time
-                let _ = self.auth_cache.save(&auth);
-                auth
-            }
+        let auth = if let Ok(v) = self.cached_auth() {
+            info!("cached auth is still usable");
+            v
+        } else {
+            let auth = self.remote_auth().await?;
+            // save it for next time
+            let _ = self.auth_cache.save(&auth);
+            auth
         };
 
         self.auth = auth;
