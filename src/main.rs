@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::Parser;
 use log::LevelFilter;
 use rstaples::logging::StaplesLogger;
+use tabled::{Table, Tabled, settings::Style};
 use ubw::{api::BwApi, config::BwConfig, crypto::BwCrypt};
 
 #[derive(Parser)]
@@ -16,6 +17,13 @@ struct UserArgs {
     /// verbose
     #[arg(short, long)]
     verbose: bool,
+}
+
+#[derive(Tabled)]
+struct CipherTable<'a> {
+    id: &'a str,
+    ctype: String,
+    name: String,
 }
 
 #[tokio::main]
@@ -40,10 +48,25 @@ async fn main() -> Result<()> {
 
     let ciphers = api.ciphers().await?;
 
+    let mut cipher_table = Vec::new();
+
     for c in &ciphers {
         let name: String = crypt.decrypt(&c.name)?.try_into()?;
-        println!("{} name={name} type={}", c.id, c.cipher_type);
+
+        let table_entry = CipherTable {
+            id: &c.id,
+            ctype: c.cipher_type.to_string(),
+            name,
+        };
+
+        cipher_table.push(table_entry);
     }
+
+    let mut table = Table::new(cipher_table);
+    table.with(Style::modern());
+    //table.with(Style::rounded());
+
+    println!("{}", table);
 
     Ok(())
 }

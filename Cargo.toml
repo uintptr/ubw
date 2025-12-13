@@ -15,6 +15,7 @@ rstaples = "0.3"
 serde = "1.0"
 serde_json = "1.0"
 serde_repr = "0.1"
+tabled = "0.20"
 thiserror = "2.0"
 tokio = { version = "1.48", features = ["full"] }
 toml = "0.9"
