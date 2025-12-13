@@ -38,12 +38,11 @@ async fn main() -> Result<()> {
 
     let crypt = BwCrypt::new(&config, auth)?;
 
-    let sync = api.sync().await?;
+    let ciphers = api.ciphers().await?;
 
-    for c in &sync.ciphers {
-        let name: String = crypt.decrypt(&c.data.name)?.try_into()?;
-        let pass: String = crypt.decrypt(&c.data.password)?.try_into()?;
-        println!("name={name} password={pass}");
+    for c in &ciphers {
+        let name: String = crypt.decrypt(&c.name)?.try_into()?;
+        println!("{} name={name} type={}", c.id, c.cipher_type);
     }
 
     Ok(())

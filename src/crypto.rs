@@ -2,6 +2,7 @@ use std::{num::NonZero, str::FromStr};
 
 use anyhow::Result;
 use bitwarden_crypto::{EncString, Kdf, KeyDecryptable, MasterKey, SymmetricCryptoKey};
+use log::info;
 
 use crate::{api::BwAuth, config::BwConfig, error::Error};
 
@@ -17,6 +18,8 @@ impl BwCrypt {
 
         let kdf = Kdf::PBKDF2 { iterations: nz_ndf };
 
+        // this takes a long time in debug
+        info!("deriving master key");
         let master = MasterKey::derive(&config.credentials.password, &config.credentials.email, &kdf)?;
 
         let enc_key = EncString::from_str(&auth.key)?;

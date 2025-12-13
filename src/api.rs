@@ -1,28 +1,51 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use derive_more::Display;
 use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_repr::Deserialize_repr;
 
 use crate::{auth_cache::BwCachedAuth, config::BwConfig};
 
 #[derive(Debug, Deserialize)]
 pub struct BwCipherData {
     pub name: String,
-    pub password: String,
-    pub username: String,
+    pub password: Option<String>,
+    pub username: Option<String>,
+}
+
+#[derive(Display, Debug, Deserialize_repr)]
+#[repr(u8)]
+pub enum BwCipherType {
+    Login = 1,
+    Note = 2,
+    Card = 3,
+    Identity = 4,
+    Ssh = 5,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct BwCipher {
+    pub id: String,
     pub data: BwCipherData,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub cipher_type: BwCipherType,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct BwSync {
     pub ciphers: Vec<BwCipher>,
     pub profile: BwProfile,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BwCipherResponse {
+    #[serde(rename = "continuationToken")]
+    pub continuation_token: Option<String>,
+    pub data: Vec<BwCipher>,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -111,7 +134,7 @@ impl<'a> BwApi<'a> {
     }
 
     pub async fn sync(&mut self) -> Result<BwSync> {
-        let url = format!("{}/api/sync", self.config.server.url);
+        let url = format!("{}/api/sync?excludeDomains=true", self.config.server.url);
 
         let data = self
             .client
@@ -122,5 +145,38 @@ impl<'a> BwApi<'a> {
             .json::<BwSync>()
             .await?;
         Ok(data)
+    }
+
+    pub async fn ciphers(&mut self) -> Result<Vec<BwCipher>> {
+        let mut cont_token = None;
+
+        let mut ciphers = Vec::new();
+
+        loop {
+            let url = if let Some(token) = cont_token {
+                format!("{}/api/ciphers?continuationToken={token}", self.config.server.url)
+            } else {
+                format!("{}/api/ciphers", self.config.server.url)
+            };
+
+            let resp = self
+                .client
+                .get(url)
+                .bearer_auth(&self.auth.access_token)
+                .send()
+                .await?
+                .json::<BwCipherResponse>()
+                .await?;
+
+            ciphers.extend(resp.data);
+
+            if let Some(token) = resp.continuation_token {
+                cont_token = Some(token);
+            } else {
+                break;
+            }
+        }
+
+        Ok(ciphers)
     }
 }
