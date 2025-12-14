@@ -103,7 +103,7 @@ impl BwApi {
     }
 
     pub fn with_auth(&mut self, auth: &BwAuth) {
-        self.auth = auth.clone()
+        self.auth = auth.clone();
     }
 
     pub async fn auth<S>(&mut self, password: S) -> Result<&BwAuth>

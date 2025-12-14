@@ -79,6 +79,7 @@ impl BwCrypt {
         Ok(decrypted)
     }
 
+    #[must_use]
     pub fn export(&self) -> String {
         self.symmetric_key.to_base64()
     }

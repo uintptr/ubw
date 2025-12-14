@@ -50,7 +50,7 @@ impl BwSession {
         let expiry = data.ts.saturating_add(data.auth.expires_in);
         let rem_sec = expiry.saturating_sub(now);
 
-        info!("{SESSION_ENV_VAR} expires in {} seconds", rem_sec);
+        info!("{SESSION_ENV_VAR} expires in {rem_sec} seconds");
 
         Ok(data)
     }

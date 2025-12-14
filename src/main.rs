@@ -22,13 +22,11 @@ struct CipherTable<'a> {
 async fn command_session(args: SessionArgs) -> Result<()> {
     let mut api = BwApi::new(&args.email, &args.server_url)?;
 
-    let password = match env::var("UBW_PASSWORD") {
-        Ok(v) => v,
-        Err(_) => {
-            let prompt = format!("Password for {}: ", args.email);
-            let password = rpassword::prompt_password(prompt)?;
-            password
-        }
+    let password = if let Ok(password) = env::var("UBW_PASSWORD") {
+        password
+    } else {
+        let prompt = format!("Password for {}: ", args.email);
+        rpassword::prompt_password(prompt)?
     };
 
     //
@@ -78,7 +76,7 @@ async fn command_ciphers(_args: CiphersArgs) -> Result<()> {
     let mut table = Table::new(cipher_table);
     table.with(Style::modern());
 
-    println!("\n{}", table);
+    println!("\n{table}");
 
     Ok(())
 }
