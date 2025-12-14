@@ -7,7 +7,9 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_repr::Deserialize_repr;
 
-use crate::{auth_cache::BwCachedAuth, config::BwConfig};
+use crate::crypto::build_password_hash;
+
+const UBW_DEVICE_ID: &str = "2c28ca63-da34-452d-9d54-3180c2d1165e";
 
 #[derive(Debug, Deserialize)]
 pub struct BwCipherData {
@@ -48,7 +50,7 @@ pub struct BwCipherResponse {
     pub data: Vec<BwCipher>,
 }
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BwAuth {
     #[serde(rename = "KdfIterations")]
     pub kdf_iterations: u32,
@@ -56,6 +58,8 @@ pub struct BwAuth {
     pub key: String,
     pub access_token: String,
     pub expires_in: u64,
+    pub token_type: String,
+    pub scope: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,39 +71,63 @@ pub struct BwProfile {
     pub private_key: String,
 }
 
-pub struct BwApi<'a> {
-    client: Client,
-    config: &'a BwConfig,
-    auth: BwAuth,
-    auth_cache: BwCachedAuth,
+#[derive(Debug, Serialize)]
+pub struct BwPreLoginRequest<'a> {
+    pub email: &'a str,
+}
+#[derive(Debug, Deserialize)]
+pub struct BwPreLogin {
+    #[serde(rename = "kdfIterations")]
+    pub kdf_iterations: u32,
 }
 
-impl<'a> BwApi<'a> {
-    pub fn new(config: &'a BwConfig) -> Result<Self> {
-        let auth_cache = BwCachedAuth::new()?;
+pub struct BwApi {
+    client: Client,
+    email: String,
+    server: String,
+    auth: BwAuth,
+}
 
+impl BwApi {
+    pub fn new<E, S>(email: E, server: S) -> Result<Self>
+    where
+        E: AsRef<str>,
+        S: AsRef<str>,
+    {
         Ok(Self {
             client: Client::new(),
-            config,
+            email: email.as_ref().into(),
+            server: server.as_ref().into(),
             auth: BwAuth::default(),
-            auth_cache,
         })
     }
 
-    async fn remote_auth(&mut self) -> Result<BwAuth> {
+    pub fn with_auth(&mut self, auth: &BwAuth) {
+        self.auth = auth.clone()
+    }
+
+    pub async fn auth<S>(&mut self, password: S) -> Result<&BwAuth>
+    where
+        S: AsRef<str>,
+    {
         info!("doing remote auth");
 
-        let auth_url = format!("{}/identity/connect/token", self.config.server.url);
+        let auth_url = format!("{}/identity/connect/token", self.server);
 
         let mut params = HashMap::new();
 
-        params.insert("grant_type", "client_credentials");
-        params.insert("scope", "api");
-        params.insert("client_id", &self.config.credentials.client_id);
-        params.insert("client_secret", &self.config.credentials.client_secret);
-        params.insert("device_identifier", "ubw");
-        params.insert("device_name", "ubw");
-        params.insert("device_type", "1");
+        let pre = self.prelogin().await?;
+
+        let password_hash = build_password_hash(pre.kdf_iterations, &self.email, password.as_ref())?;
+
+        params.insert("grant_type", "password");
+        params.insert("username", &self.email);
+        params.insert("password", &password_hash);
+        params.insert("scope", "api offline_access");
+        params.insert("client_id", "web");
+        params.insert("deviceType", "10");
+        params.insert("deviceIdentifier", UBW_DEVICE_ID);
+        params.insert("deviceName", "ubw");
 
         let auth = self
             .client
@@ -111,34 +139,17 @@ impl<'a> BwApi<'a> {
             .json::<BwAuth>()
             .await?;
 
-        Ok(auth)
-    }
-
-    fn cached_auth(&self) -> Result<BwAuth> {
-        self.auth_cache.load()
-    }
-
-    pub async fn auth(&mut self) -> Result<&BwAuth> {
-        let auth = if let Ok(v) = self.cached_auth() {
-            info!("cached auth is still usable");
-            v
-        } else {
-            let auth = self.remote_auth().await?;
-            // save it for next time
-            let _ = self.auth_cache.save(&auth);
-            auth
-        };
-
         self.auth = auth;
+
         Ok(&self.auth)
     }
 
     pub async fn sync(&mut self) -> Result<BwSync> {
-        let url = format!("{}/api/sync?excludeDomains=true", self.config.server.url);
+        let sync_url = format!("{}/api/sync?excludeDomains=true", self.server);
 
         let data = self
             .client
-            .get(url)
+            .get(sync_url)
             .bearer_auth(&self.auth.access_token)
             .send()
             .await?
@@ -153,15 +164,15 @@ impl<'a> BwApi<'a> {
         let mut ciphers = Vec::new();
 
         loop {
-            let url = if let Some(token) = cont_token {
-                format!("{}/api/ciphers?continuationToken={token}", self.config.server.url)
+            let ciphers_url = if let Some(token) = cont_token {
+                format!("{}/api/ciphers?continuationToken={token}", self.server)
             } else {
-                format!("{}/api/ciphers", self.config.server.url)
+                format!("{}/api/ciphers", self.server)
             };
 
             let resp = self
                 .client
-                .get(url)
+                .get(ciphers_url)
                 .bearer_auth(&self.auth.access_token)
                 .send()
                 .await?
@@ -178,5 +189,22 @@ impl<'a> BwApi<'a> {
         }
 
         Ok(ciphers)
+    }
+
+    pub async fn prelogin(&self) -> Result<BwPreLogin> {
+        let prelogin_url = format!("{}/identity/accounts/prelogin", self.server);
+
+        let req_data = BwPreLoginRequest { email: &self.email };
+
+        let data = Client::new()
+            .post(prelogin_url)
+            .header("Content-Type", "application/json")
+            .json(&req_data)
+            .send()
+            .await?
+            .json::<BwPreLogin>()
+            .await?;
+
+        Ok(data)
     }
 }

@@ -10,6 +10,7 @@ pub enum Error {
     DataDirNotFound,
     CacheFileNotFound,
     CacheExpired,
+    MissingParamError(String),
     //
     // 2d party
     //
