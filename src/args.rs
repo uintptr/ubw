@@ -16,7 +16,9 @@ pub struct CiphersArgs {}
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Create a new session
     Session(SessionArgs),
+    /// List ciphers
     Ciphers(CiphersArgs),
 }
 
