@@ -22,6 +22,7 @@ struct CipherTable<'a> {
 async fn command_session(args: SessionArgs) -> Result<()> {
     let mut api = BwApi::new(&args.email, &args.server_url)?;
 
+    // helps with testing but not recommended
     let password = if let Ok(password) = env::var("UBW_PASSWORD") {
         password
     } else {
@@ -40,10 +41,15 @@ async fn command_session(args: SessionArgs) -> Result<()> {
     let crypt = BwCrypt::from_password(&args.email, password, auth)?;
     let key = crypt.export();
 
+    //
+    // Build the session key
+    //
     let session = BwSession::new(&args.email, &args.server_url, key, auth)?;
-
     let session_env = session.export()?;
 
+    //
+    // print it for the user to source it
+    //
     println!("{session_env}");
 
     Ok(())
@@ -76,7 +82,7 @@ async fn command_ciphers(_args: CiphersArgs) -> Result<()> {
     let mut table = Table::new(cipher_table);
     table.with(Style::modern());
 
-    println!("\n{table}");
+    println!("{table}");
 
     Ok(())
 }
@@ -97,39 +103,4 @@ async fn main() -> Result<()> {
         Commands::Session(sess) => command_session(sess).await,
         Commands::Ciphers(ciphers) => command_ciphers(ciphers).await,
     }
-
-    /*
-    let mut config = BwConfig::new(&args)?;
-    augment_config(&args, &mut config).await?;
-
-    let mut cache = BwCache::new()?;
-
-    let mut api = BwApi::new(&config.credentials.email, &config.server.url)?;
-
-    let crypt = init_crypt(&config, &mut cache, &mut api).await?;
-
-    //
-    // read the config file as-is, we'll augment it with the user args
-    //
-    let ciphers = api.ciphers().await?;
-
-    let mut cipher_table = Vec::new();
-
-    for c in &ciphers {
-        let name: String = crypt.decrypt(&c.name)?.try_into()?;
-
-        let table_entry = CipherTable {
-            id: &c.id,
-            ctype: c.cipher_type.to_string(),
-            name,
-        };
-
-        cipher_table.push(table_entry);
-    }
-
-    let mut table = Table::new(cipher_table);
-    table.with(Style::modern());
-
-    println!("\n{}", table);
-    */
 }
