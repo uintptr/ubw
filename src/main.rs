@@ -2,7 +2,7 @@ use std::env;
 
 use anyhow::Result;
 use clap::Parser;
-use log::LevelFilter;
+use log::{LevelFilter, info};
 use rstaples::logging::StaplesLogger;
 use tabled::{Table, Tabled, settings::Style};
 use ubw::{
@@ -20,13 +20,30 @@ struct CipherTable<'a> {
 }
 
 async fn command_session(args: SessionArgs) -> Result<()> {
-    let mut api = BwApi::new(&args.email, &args.server_url)?;
+    let email = if let Some(email) = args.email {
+        email
+    } else {
+        let env_email = env::var("UBW_EMAIL")?;
+        info!("using UBW_EMAIL={}", env_email);
+        env_email
+    };
+
+    let server_url = if let Some(server_url) = args.server_url {
+        server_url
+    } else {
+        let server_url = env::var("UBW_SERVER_URL")?;
+        info!("using UBW_SERVER_URL={}", server_url);
+        server_url
+    };
+
+    let mut api = BwApi::new(&email, &server_url)?;
 
     // helps with testing but not recommended
     let password = if let Ok(password) = env::var("UBW_PASSWORD") {
+        info!("using UBW_PASSWORD=***********");
         password
     } else {
-        let prompt = format!("Password for {}: ", args.email);
+        let prompt = format!("Password for {}: ", email);
         rpassword::prompt_password(prompt)?
     };
 
@@ -38,13 +55,13 @@ async fn command_session(args: SessionArgs) -> Result<()> {
     //
     // create the symetric key
     //
-    let crypt = BwCrypt::from_password(&args.email, password, auth)?;
+    let crypt = BwCrypt::from_password(&email, password, auth)?;
     let key = crypt.export();
 
     //
     // Build the session key
     //
-    let session = BwSession::new(&args.email, &args.server_url, key, auth)?;
+    let session = BwSession::new(&email, &server_url, key, auth)?;
     let session_env = session.export()?;
 
     //

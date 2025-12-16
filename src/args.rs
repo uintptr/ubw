@@ -4,11 +4,11 @@ use clap::{Args, Parser, Subcommand};
 pub struct SessionArgs {
     /// email address
     #[arg(short, long)]
-    pub email: String,
+    pub email: Option<String>,
 
     /// server url
     #[arg(short, long)]
-    pub server_url: String,
+    pub server_url: Option<String>,
 }
 
 #[derive(Args)]

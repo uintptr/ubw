@@ -40,7 +40,7 @@ impl BwSession {
     pub fn from_env() -> Result<Self> {
         let base64_data = std::env::var(SESSION_ENV_VAR)?;
 
-        info!("{SESSION_ENV_VAR} is set len={} bytes", base64_data.len());
+        info!("{SESSION_ENV_VAR} is set, len={} bytes", base64_data.len());
 
         let json_string: String = BASE64_STANDARD.decode(base64_data)?.try_into()?;
 
