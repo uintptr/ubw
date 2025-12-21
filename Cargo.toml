@@ -19,6 +19,7 @@ serde_repr = "0.1"
 tabled = "0.20"
 thiserror = "2.0"
 tokio = { version = "1.48", features = ["full"] }
+totp-rs = { version = "5.7.0", features = ["otpauth"] }
 
 [lints.clippy]
 arithmetic_side_effects = "warn"

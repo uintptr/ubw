@@ -2,13 +2,15 @@ use std::env;
 
 use anyhow::Result;
 use clap::Parser;
-use log::{LevelFilter, info};
+use log::{LevelFilter, error, info, warn};
 use rstaples::logging::StaplesLogger;
 use tabled::{Table, Tabled, settings::Style};
+use totp_rs::TOTP;
 use ubw::{
-    api::BwApi,
+    api::{BwApi, BwCipher},
     args::{CiphersArgs, Commands, SessionArgs, UserArgs},
     crypto::BwCrypt,
+    error::Error,
     session::BwSession,
 };
 
@@ -17,6 +19,7 @@ struct CipherTable<'a> {
     id: &'a str,
     ctype: String,
     name: String,
+    totp: String,
 }
 
 async fn command_session(args: SessionArgs) -> Result<()> {
@@ -72,6 +75,32 @@ async fn command_session(args: SessionArgs) -> Result<()> {
     Ok(())
 }
 
+fn get_totp(crypt: &BwCrypt, cipher: &BwCipher) -> Result<String> {
+    if let Some(login) = &cipher.login
+        && let Some(totp) = &login.totp
+    {
+        let totp_string: String = crypt.decrypt(&totp)?.try_into()?;
+
+        if totp_string.starts_with("otpauth://") {
+            let totp = match TOTP::from_url(&totp_string) {
+                Ok(v) => v,
+                Err(e) => {
+                    error!("Unable to parse {totp_string} {e}");
+                    return Err(e.into());
+                }
+            };
+            let otp = totp.generate_current()?;
+
+            Ok(otp)
+        } else {
+            warn!("format not implemented {totp_string}");
+            Err(Error::TotpNotImplemented.into())
+        }
+    } else {
+        Err(Error::TotpNotFound.into())
+    }
+}
+
 async fn command_ciphers(_args: CiphersArgs) -> Result<()> {
     let session = BwSession::from_env()?;
 
@@ -85,12 +114,15 @@ async fn command_ciphers(_args: CiphersArgs) -> Result<()> {
     let mut cipher_table = Vec::new();
 
     for c in &ciphers {
+        let totp = get_totp(&crypt, &c).unwrap_or("".into());
+
         let name: String = crypt.decrypt(&c.name)?.try_into()?;
 
         let table_entry = CipherTable {
             id: &c.id,
             ctype: c.cipher_type.to_string(),
             name,
+            totp,
         };
 
         cipher_table.push(table_entry);

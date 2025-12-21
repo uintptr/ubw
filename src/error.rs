@@ -11,6 +11,8 @@ pub enum Error {
     CacheFileNotFound,
     CacheExpired,
     MissingParamError(String),
+    TotpNotFound,
+    TotpNotImplemented,
     //
     // 2d party
     //

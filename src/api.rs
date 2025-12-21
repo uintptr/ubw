@@ -29,12 +29,18 @@ pub enum BwCipherType {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BwLogin {
+    pub totp: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct BwCipher {
     pub id: String,
     pub data: BwCipherData,
     pub name: String,
     #[serde(rename = "type")]
     pub cipher_type: BwCipherType,
+    pub login: Option<BwLogin>,
 }
 
 #[derive(Debug, Deserialize)]
