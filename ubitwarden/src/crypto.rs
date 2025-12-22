@@ -97,21 +97,28 @@ impl BwCrypt {
             let otp = totp.generate_current()?;
             Ok(otp)
         } else {
-            let totp = TOTP::new(
+            let secret = Secret::Encoded(totp_string.to_string()).to_bytes()?;
+
+            let ret = TOTP::new(
                 Algorithm::SHA1,
                 6,
                 1,
                 30,
-                Secret::Encoded(totp_string.to_string()).to_bytes().unwrap(),
+                secret,
                 Some("example".to_string()),
                 "test@example.com".to_string(),
-            )?;
+            );
 
-            let otp = totp.generate_current()?;
-            Ok(otp)
-
-            //warn!("format not implemented {totp_string}");
-            // Err(Error::TotpNotImplemented.into())
+            match ret {
+                Ok(v) => {
+                    let otp = v.generate_current()?;
+                    Ok(otp)
+                }
+                Err(e) => {
+                    error!("Unable to parse ({e}");
+                    Err(e.into())
+                }
+            }
         }
     }
 
