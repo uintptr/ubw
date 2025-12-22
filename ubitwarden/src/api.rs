@@ -106,7 +106,7 @@ impl BwApi {
         })
     }
 
-    pub async fn auth<S>(&mut self, password: S) -> Result<BwAuth>
+    pub async fn auth<S>(&self, password: S) -> Result<BwAuth>
     where
         S: AsRef<str>,
     {
@@ -142,7 +142,7 @@ impl BwApi {
         Ok(auth)
     }
 
-    pub async fn sync(&mut self, auth: &BwAuth) -> Result<BwSync> {
+    pub async fn sync(&self, auth: &BwAuth) -> Result<BwSync> {
         let sync_url = format!("{}/api/sync?excludeDomains=true", self.server);
 
         let data = self
@@ -156,7 +156,7 @@ impl BwApi {
         Ok(data)
     }
 
-    pub async fn ciphers(&mut self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
+    pub async fn ciphers(&self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
         let mut cont_token = None;
 
         let mut ciphers = Vec::new();

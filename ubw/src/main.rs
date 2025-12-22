@@ -136,7 +136,7 @@ async fn load_session(email: &str) -> Result<BwSession> {
     //
     // Either it didn't exist or it was expired. let's rejoin
     //
-    let mut api = BwApi::new(&creds.email, &creds.server_url)?;
+    let api = BwApi::new(&creds.email, &creds.server_url)?;
 
     let auth = api.auth(&creds.password).await?;
 
@@ -209,7 +209,7 @@ async fn command_ciphers(args: CiphersArgs) -> Result<()> {
 
     let crypt = BwCrypt::from_encoded_key(session.key)?;
 
-    let mut api = BwApi::new(&session.email, &session.server_url)?;
+    let api = BwApi::new(&session.email, &session.server_url)?;
 
     let ciphers = api.ciphers(&session.auth).await?;
 
