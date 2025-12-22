@@ -2169,7 +2169,7 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "ubitwarden"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "base64",
@@ -2190,7 +2190,7 @@ dependencies = [
 
 [[package]]
 name = "ubw"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "clap",

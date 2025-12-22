@@ -177,7 +177,7 @@ fn get_totp(crypt: &BwCrypt, cipher: &BwCipher) -> Result<String> {
     if let Some(login) = &cipher.login
         && let Some(totp) = &login.totp
     {
-        let totp_string: String = crypt.parse_totp(totp)?.try_into()?;
+        let totp_string = crypt.parse_totp(totp)?;
         Ok(totp_string)
     } else {
         Err(Error::TotpNotFound.into())

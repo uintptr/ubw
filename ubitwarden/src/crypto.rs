@@ -97,7 +97,7 @@ impl BwCrypt {
             let otp = totp.generate_current()?;
             Ok(otp)
         } else {
-            let secret = Secret::Encoded(totp_string.to_string()).to_bytes()?;
+            let secret = Secret::Encoded(totp_string.clone()).to_bytes()?;
 
             let ret = TOTP::new(
                 Algorithm::SHA1,
