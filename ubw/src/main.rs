@@ -3,7 +3,6 @@ use std::env;
 use clap::{Args, Parser, Subcommand};
 use dialoguer::Password;
 use tabled::{Table, Tabled, settings::Style};
-use totp_rs::TOTP;
 
 use log::{error, info, warn};
 
@@ -42,10 +41,10 @@ pub struct LoginArgs {
 }
 
 #[derive(Args)]
-pub struct CiphersArgs {
-    /// email address
+pub struct CipherArgs {
+    /// cipher id
     #[arg(short, long)]
-    pub email: Option<String>,
+    id: String,
 }
 
 #[derive(Subcommand)]
@@ -53,7 +52,11 @@ pub enum Commands {
     /// Create a new session
     Login(LoginArgs),
     /// List ciphers
-    Ciphers(CiphersArgs),
+    Ciphers,
+    /// Pull cipher
+    Cipher(CipherArgs),
+    /// Pull the TOTP for the specified id
+    Totp(CipherArgs),
     /// Credential Server
     Server,
 }
@@ -70,8 +73,8 @@ pub struct UserArgs {
     pub command: Commands,
 }
 
-async fn fetch_credentials(email: &str) -> Result<BwCredentials> {
-    let data = fetch_user_data(email, "credentials").await?;
+async fn fetch_credentials() -> Result<BwCredentials> {
+    let data = fetch_user_data("credentials").await?;
     let creds: BwCredentials = serde_json::from_str(&data)?;
     info!("found credentials for {}", creds.email);
     Ok(creds)
@@ -105,22 +108,22 @@ async fn store_credentials(email: &str, args: &LoginArgs) -> Result<()> {
 
     let encoded_creds = serde_json::to_string(&creds)?;
 
-    store_user_data(email, "credentials", encoded_creds).await
+    store_user_data("credentials", encoded_creds).await
 }
 
-async fn fetch_session(email: &str) -> Result<BwSession> {
-    let data = fetch_user_data(email, "session").await?;
+async fn fetch_session() -> Result<BwSession> {
+    let data = fetch_user_data("session").await?;
     let session: BwSession = serde_json::from_str(&data)?;
     Ok(session)
 }
 
-async fn store_session(email: &str, session: &BwSession) -> Result<()> {
+async fn store_session(session: &BwSession) -> Result<()> {
     let encoded_session = serde_json::to_string(session)?;
-    store_user_data(email, "session", encoded_session).await
+    store_user_data("session", encoded_session).await
 }
 
-async fn load_session(email: &str) -> Result<BwSession> {
-    if let Ok(session) = fetch_session(email).await {
+async fn load_session() -> Result<BwSession> {
+    if let Ok(session) = fetch_session().await {
         if session.expired()? {
             warn!("session expired");
             //
@@ -131,7 +134,7 @@ async fn load_session(email: &str) -> Result<BwSession> {
         }
     }
 
-    let creds = fetch_credentials(email).await?;
+    let creds = fetch_credentials().await?;
 
     //
     // Either it didn't exist or it was expired. let's rejoin
@@ -143,7 +146,7 @@ async fn load_session(email: &str) -> Result<BwSession> {
     let session = BwSession::new(&creds, &auth)?;
 
     // best effort. not fatal since we got what we wanted
-    if let Err(e) = store_session(&creds.email, &session).await {
+    if let Err(e) = store_session(&session).await {
         error!("Unable to store session: ({e})");
     }
 
@@ -165,7 +168,7 @@ async fn command_login(args: LoginArgs) -> Result<()> {
     };
 
     store_credentials(&email, &args).await?;
-    fetch_credentials(&email).await?;
+    fetch_credentials().await?;
 
     Ok(())
 }
@@ -174,49 +177,18 @@ fn get_totp(crypt: &BwCrypt, cipher: &BwCipher) -> Result<String> {
     if let Some(login) = &cipher.login
         && let Some(totp) = &login.totp
     {
-        let totp_string: String = crypt.decrypt(totp)?.try_into()?;
-
-        if totp_string.starts_with("otpauth://") {
-            let totp = match TOTP::from_url(&totp_string) {
-                Ok(v) => v,
-                Err(e) => {
-                    error!("Unable to parse {totp_string} {e}");
-                    return Err(e.into());
-                }
-            };
-            let otp = totp.generate_current()?;
-
-            Ok(otp)
-        } else {
-            warn!("format not implemented {totp_string}");
-            Err(Error::TotpNotImplemented.into())
-        }
+        let totp_string: String = crypt.parse_totp(totp)?.try_into()?;
+        Ok(totp_string)
     } else {
         Err(Error::TotpNotFound.into())
     }
 }
 
-async fn command_ciphers(args: CiphersArgs) -> Result<()> {
-    let email = if let Some(email) = &args.email {
-        email.clone()
-    } else {
-        let env_email = env::var("UBW_EMAIL")?;
-        info!("using UBW_EMAIL={env_email}");
-        env_email
-    };
-
-    let session = load_session(&email).await?;
-
-    let crypt = BwCrypt::from_encoded_key(session.key)?;
-
-    let api = BwApi::new(&session.email, &session.server_url)?;
-
-    let ciphers = api.ciphers(&session.auth).await?;
-
+fn display_ciphers(crypt: &BwCrypt, ciphers: &[BwCipher]) -> Result<()> {
     let mut cipher_table = Vec::new();
 
-    for c in &ciphers {
-        let totp = get_totp(&crypt, c).unwrap_or_default();
+    for c in ciphers {
+        let totp = get_totp(crypt, c).unwrap_or_default();
 
         let name: String = crypt.decrypt(&c.name)?.try_into()?;
 
@@ -238,6 +210,52 @@ async fn command_ciphers(args: CiphersArgs) -> Result<()> {
     Ok(())
 }
 
+async fn command_ciphers() -> Result<()> {
+    let session = load_session().await?;
+
+    let crypt = BwCrypt::from_encoded_key(session.key)?;
+
+    let api = BwApi::new(&session.email, &session.server_url)?;
+
+    let ciphers = api.ciphers(&session.auth).await?;
+
+    display_ciphers(&crypt, &ciphers)
+}
+
+async fn command_cipher<I>(id: I) -> Result<()>
+where
+    I: AsRef<str>,
+{
+    let session = load_session().await?;
+
+    let crypt = BwCrypt::from_encoded_key(session.key)?;
+
+    let api = BwApi::new(&session.email, &session.server_url)?;
+
+    let cipher = api.cipher(&session.auth, id.as_ref()).await?;
+
+    display_ciphers(&crypt, &[cipher])
+}
+
+async fn command_totp<I>(id: I) -> Result<()>
+where
+    I: AsRef<str>,
+{
+    let session = load_session().await?;
+
+    let crypt = BwCrypt::from_encoded_key(session.key)?;
+
+    let api = BwApi::new(&session.email, &session.server_url)?;
+
+    let encrypted_totp = api.totp(&session.auth, id.as_ref()).await?;
+
+    let totp = crypt.parse_totp(encrypted_totp)?;
+
+    println!("totp: {totp}");
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = UserArgs::parse();
@@ -253,6 +271,8 @@ async fn main() -> Result<()> {
     match args.command {
         Commands::Login(login) => command_login(login).await,
         Commands::Server => cache_server().await,
-        Commands::Ciphers(cipher) => command_ciphers(cipher).await,
+        Commands::Ciphers => command_ciphers().await,
+        Commands::Cipher(cipher) => command_cipher(cipher.id).await,
+        Commands::Totp(totp) => command_totp(totp.id).await,
     }
 }

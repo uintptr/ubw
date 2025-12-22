@@ -1,9 +1,10 @@
 use std::{num::NonZero, str::FromStr};
 
-use log::info;
+use log::{error, info};
 
 use anyhow::Result;
 use bitwarden_crypto::{EncString, HashPurpose, Kdf, KeyDecryptable, MasterKey, SymmetricCryptoKey};
+use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::{api::BwAuth, error::Error};
 
@@ -77,6 +78,41 @@ impl BwCrypt {
         let decrypted = enc_string.decrypt_with_key(&self.symmetric_key)?;
 
         Ok(decrypted)
+    }
+
+    pub fn parse_totp<T>(&self, encrypted_totp: T) -> Result<String>
+    where
+        T: AsRef<str>,
+    {
+        let totp_string: String = self.decrypt(encrypted_totp)?.try_into()?;
+
+        if totp_string.starts_with("otpauth://") {
+            let totp = match TOTP::from_url(&totp_string) {
+                Ok(v) => v,
+                Err(e) => {
+                    error!("Unable to parse {totp_string} {e}");
+                    return Err(e.into());
+                }
+            };
+            let otp = totp.generate_current()?;
+            Ok(otp)
+        } else {
+            let totp = TOTP::new(
+                Algorithm::SHA1,
+                6,
+                1,
+                30,
+                Secret::Encoded(totp_string.to_string()).to_bytes().unwrap(),
+                Some("example".to_string()),
+                "test@example.com".to_string(),
+            )?;
+
+            let otp = totp.generate_current()?;
+            Ok(otp)
+
+            //warn!("format not implemented {totp_string}");
+            // Err(Error::TotpNotImplemented.into())
+        }
     }
 
     #[must_use]

@@ -18,6 +18,7 @@ serde_json.workspace = true
 serde_repr.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+totp-rs.workspace = true
 
 [lints]
 workspace = true

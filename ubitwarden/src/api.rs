@@ -7,7 +7,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_repr::Deserialize_repr;
 
-use crate::crypto::build_password_hash;
+use crate::{crypto::build_password_hash, error::Error};
 
 const UBW_DEVICE_ID: &str = "2c28ca63-da34-452d-9d54-3180c2d1165e";
 
@@ -31,6 +31,8 @@ pub enum BwCipherType {
 #[derive(Debug, Deserialize)]
 pub struct BwLogin {
     pub totp: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -187,6 +189,41 @@ impl BwApi {
         }
 
         Ok(ciphers)
+    }
+
+    pub async fn cipher<I>(&self, auth: &BwAuth, id: I) -> Result<BwCipher>
+    where
+        I: AsRef<str>,
+    {
+        let url = format!("{}/api/ciphers/{}", self.server, id.as_ref());
+
+        let cipher_dict = self
+            .client
+            .get(url)
+            .bearer_auth(&auth.access_token)
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+
+        let cipher: BwCipher = serde_json::from_value(cipher_dict)?;
+
+        Ok(cipher)
+    }
+
+    pub async fn totp<I>(&self, auth: &BwAuth, id: I) -> Result<String>
+    where
+        I: AsRef<str>,
+    {
+        let cipher = self.cipher(auth, id).await?;
+
+        if let Some(login) = cipher.login
+            && let Some(encrypted_totp) = login.totp
+        {
+            Ok(encrypted_totp)
+        } else {
+            Err(Error::TotpNotFound.into())
+        }
     }
 
     pub async fn prelogin(&self) -> Result<BwPreLogin> {

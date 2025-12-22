@@ -67,21 +67,17 @@ pub async fn ping() -> Result<()> {
     write_string(&mut stream, "ping").await
 }
 
-pub async fn store_user_data<D, E, K>(email: E, key: K, data: D) -> Result<()>
+pub async fn store_user_data<D, K>(key: K, data: D) -> Result<()>
 where
     D: AsRef<str>,
-    E: AsRef<str>,
     K: AsRef<str>,
 {
-    let key = format!("{}_{}", email.as_ref(), key.as_ref());
     store_data(key, data).await
 }
 
-pub async fn fetch_user_data<E, K>(email: E, key: K) -> Result<String>
+pub async fn fetch_user_data<K>(key: K) -> Result<String>
 where
-    E: AsRef<str>,
     K: AsRef<str>,
 {
-    let key = format!("{}_{}", email.as_ref(), key.as_ref());
-    fetch_data(&key).await
+    fetch_data(key.as_ref()).await
 }
