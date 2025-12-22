@@ -91,7 +91,6 @@ pub struct BwApi {
     client: Client,
     email: String,
     server: String,
-    auth: BwAuth,
 }
 
 impl BwApi {
@@ -104,15 +103,10 @@ impl BwApi {
             client: Client::new(),
             email: email.as_ref().into(),
             server: server.as_ref().into(),
-            auth: BwAuth::default(),
         })
     }
 
-    pub fn with_auth(&mut self, auth: &BwAuth) {
-        self.auth = auth.clone();
-    }
-
-    pub async fn auth<S>(&mut self, password: S) -> Result<&BwAuth>
+    pub async fn auth<S>(&mut self, password: S) -> Result<BwAuth>
     where
         S: AsRef<str>,
     {
@@ -145,18 +139,16 @@ impl BwApi {
             .json::<BwAuth>()
             .await?;
 
-        self.auth = auth;
-
-        Ok(&self.auth)
+        Ok(auth)
     }
 
-    pub async fn sync(&mut self) -> Result<BwSync> {
+    pub async fn sync(&mut self, auth: &BwAuth) -> Result<BwSync> {
         let sync_url = format!("{}/api/sync?excludeDomains=true", self.server);
 
         let data = self
             .client
             .get(sync_url)
-            .bearer_auth(&self.auth.access_token)
+            .bearer_auth(&auth.access_token)
             .send()
             .await?
             .json::<BwSync>()
@@ -164,7 +156,7 @@ impl BwApi {
         Ok(data)
     }
 
-    pub async fn ciphers(&mut self) -> Result<Vec<BwCipher>> {
+    pub async fn ciphers(&mut self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
         let mut cont_token = None;
 
         let mut ciphers = Vec::new();
@@ -179,7 +171,7 @@ impl BwApi {
             let resp = self
                 .client
                 .get(ciphers_url)
-                .bearer_auth(&self.auth.access_token)
+                .bearer_auth(&auth.access_token)
                 .send()
                 .await?
                 .json::<BwCipherResponse>()

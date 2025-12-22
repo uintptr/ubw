@@ -1,3 +1,5 @@
+# Unofficial Bitwarden CLI
+
 # APIs
 
 - /identity/connect/token
