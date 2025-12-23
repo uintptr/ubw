@@ -1,4 +1,8 @@
-use std::env;
+use std::{
+    env,
+    process::{Command, Stdio},
+    time::Duration,
+};
 
 use clap::{Args, Parser, Subcommand};
 use dialoguer::Password;
@@ -6,9 +10,10 @@ use tabled::{Table, Tabled, settings::Style};
 
 use log::{error, info, warn};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use log::LevelFilter;
 use rstaples::logging::StaplesLogger;
+use tokio::time::sleep;
 use ubitwarden::{
     api::{BwApi, BwCipher},
     cache::{
@@ -153,10 +158,33 @@ async fn load_session() -> Result<BwSession> {
     Ok(session)
 }
 
+async fn spawn_server() -> Result<()> {
+    let self_exe = env::current_exe()?;
+
+    Command::new(self_exe)
+        .arg("server")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+
+    //
+    // wait until we can ping it
+    //
+    for _ in 0..4 {
+        if ping().await.is_ok() {
+            return Ok(());
+        }
+        sleep(Duration::from_secs(1)).await;
+    }
+
+    bail!("Unable to spawn credential server")
+}
+
 async fn command_login(args: LoginArgs) -> Result<()> {
-    if let Err(e) = ping().await {
-        println!("Unable to connect to credential server server");
-        return Err(e);
+    if ping().await.is_err() {
+        info!("unable to talk to the server. spawning a new one");
+        spawn_server().await?;
     }
 
     let email = if let Some(email) = &args.email {
