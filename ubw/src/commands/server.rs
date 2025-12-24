@@ -40,9 +40,13 @@ pub async fn command_server(args: ServerArgs) -> Result<()> {
             bail!("Unable to stop server");
         }
         (true, false) => Ok(()),
-        (false, _) => {
+        (false, false) => {
             info!("starting the server");
             cache_server().await?;
+            Ok(())
+        }
+        (false, true) => {
+            info!("already running");
             Ok(())
         }
     }
