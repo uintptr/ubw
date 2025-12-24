@@ -8,7 +8,7 @@ use std::{
 use clap::Args;
 
 use anyhow::{Result, anyhow, bail};
-use log::info;
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use ubitwarden::cache::common::ping;
@@ -112,7 +112,8 @@ impl LoginConfigData {
 }
 
 pub async fn command_login(args: LoginArgs) -> Result<()> {
-    if ping().await.is_err() {
+    if let Err(e) = ping().await {
+        error!("{e}");
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;
     }
