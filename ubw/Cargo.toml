@@ -11,6 +11,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 dialoguer.workspace = true
+dirs.workspace = true
 log.workspace = true
 rstaples.workspace = true
 serde.workspace = true

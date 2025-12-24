@@ -1,29 +1,24 @@
-use std::{
-    env,
-    process::{Command, Stdio},
-    time::Duration,
-};
-
 use clap::{Args, Parser, Subcommand};
-use dialoguer::Password;
 use tabled::{Table, Tabled, settings::Style};
 
-use log::{error, info, warn};
+use log::{error, warn};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use log::LevelFilter;
 use rstaples::logging::StaplesLogger;
-use tokio::time::sleep;
 use ubitwarden::{
     api::{BwApi, BwCipher},
     cache::{
-        common::{fetch_user_data, ping, store_user_data},
+        common::{fetch_user_data, store_user_data},
         server::cache_server,
     },
-    credentials::BwCredentials,
     crypto::BwCrypt,
     error::Error,
     session::BwSession,
+};
+use ubw::{
+    common::fetch_credentials,
+    login::{LoginArgs, command_login},
 };
 
 #[derive(Tabled)]
@@ -32,17 +27,6 @@ struct CipherTable<'a> {
     ctype: String,
     name: String,
     totp: String,
-}
-
-#[derive(Args)]
-pub struct LoginArgs {
-    /// email address
-    #[arg(short, long)]
-    pub email: Option<String>,
-
-    /// server url
-    #[arg(short, long)]
-    pub server_url: Option<String>,
 }
 
 #[derive(Args)]
@@ -76,44 +60,6 @@ pub struct UserArgs {
     /// Comamnd
     #[command(subcommand)]
     pub command: Commands,
-}
-
-async fn fetch_credentials() -> Result<BwCredentials> {
-    let data = fetch_user_data("credentials").await?;
-    let creds: BwCredentials = serde_json::from_str(&data)?;
-    info!("found credentials for {}", creds.email);
-    Ok(creds)
-}
-
-async fn store_credentials(email: &str, args: &LoginArgs) -> Result<()> {
-    //
-    // helps with testing but not recommended
-    //
-    let password = if let Ok(password) = env::var("UBW_PASSWORD") {
-        info!("using UBW_PASSWORD=***********");
-        password.clone()
-    } else {
-        let prompt = format!("Password for {email}");
-        Password::new().with_prompt(prompt).interact()?
-    };
-
-    let server_url = if let Some(server_url) = &args.server_url {
-        server_url.clone()
-    } else {
-        let server_url = env::var("UBW_SERVER_URL")?;
-        info!("using UBW_SERVER_URL={server_url}");
-        server_url
-    };
-
-    let creds = BwCredentials {
-        email: email.to_string(),
-        password,
-        server_url,
-    };
-
-    let encoded_creds = serde_json::to_string(&creds)?;
-
-    store_user_data("credentials", encoded_creds).await
 }
 
 async fn fetch_session() -> Result<BwSession> {
@@ -156,49 +102,6 @@ async fn load_session() -> Result<BwSession> {
     }
 
     Ok(session)
-}
-
-async fn spawn_server() -> Result<()> {
-    let self_exe = env::current_exe()?;
-
-    Command::new(self_exe)
-        .arg("server")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
-
-    //
-    // wait until we can ping it
-    //
-    for _ in 0..4 {
-        if ping().await.is_ok() {
-            return Ok(());
-        }
-        sleep(Duration::from_secs(1)).await;
-    }
-
-    bail!("Unable to spawn credential server")
-}
-
-async fn command_login(args: LoginArgs) -> Result<()> {
-    if ping().await.is_err() {
-        info!("unable to talk to the server. spawning a new one");
-        spawn_server().await?;
-    }
-
-    let email = if let Some(email) = &args.email {
-        email.clone()
-    } else {
-        let env_email = env::var("UBW_EMAIL")?;
-        info!("using UBW_EMAIL={env_email}");
-        env_email
-    };
-
-    store_credentials(&email, &args).await?;
-    fetch_credentials().await?;
-
-    Ok(())
 }
 
 fn get_totp(crypt: &BwCrypt, cipher: &BwCipher) -> Result<String> {
