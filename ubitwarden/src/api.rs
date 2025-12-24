@@ -133,15 +133,19 @@ impl BwApi {
         params.insert("deviceIdentifier", UBW_DEVICE_ID);
         params.insert("deviceName", "ubw");
 
-        let auth = self
+        let auth_dict = self
             .client
             .post(auth_url)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .form(&params)
             .send()
             .await?
-            .json::<BwAuth>()
+            .json::<serde_json::Value>()
             .await?;
+
+        dbg!(&auth_dict);
+
+        let auth: BwAuth = serde_json::from_value(auth_dict)?;
 
         Ok(auth)
     }

@@ -8,17 +8,17 @@ use log::LevelFilter;
 use rstaples::logging::StaplesLogger;
 use ubitwarden::{
     api::{BwApi, BwCipher},
-    cache::{
-        common::{fetch_user_data, store_user_data},
-        server::cache_server,
-    },
+    cache::common::{fetch_user_data, store_user_data},
     crypto::BwCrypt,
     error::Error,
     session::BwSession,
 };
 use ubw::{
+    commands::{
+        login::{LoginArgs, command_login},
+        server::{ServerArgs, command_server},
+    },
     common::fetch_credentials,
-    login::{LoginArgs, command_login},
 };
 
 #[derive(Tabled)]
@@ -47,7 +47,7 @@ pub enum Commands {
     /// Pull the TOTP for the specified id
     Totp(CipherArgs),
     /// Credential Server
-    Server,
+    Server(ServerArgs),
 }
 
 #[derive(Parser)]
@@ -202,7 +202,7 @@ async fn main() -> Result<()> {
 
     match args.command {
         Commands::Login(login) => command_login(login).await?,
-        Commands::Server => cache_server().await?,
+        Commands::Server(a) => command_server(a).await?,
         Commands::Ciphers => command_ciphers().await?,
         Commands::Cipher(cipher) => command_cipher(cipher.id).await?,
         Commands::Totp(totp) => command_totp(totp.id).await?,

@@ -11,7 +11,7 @@ use anyhow::{Result, anyhow, bail};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
-use ubitwarden::cache::common::ping;
+use ubitwarden::cache::common::ping_server;
 
 use crate::common::{fetch_credentials, store_credentials};
 
@@ -49,7 +49,7 @@ async fn spawn_server() -> Result<()> {
     // wait until we can ping it
     //
     for _ in 0..4 {
-        if ping().await.is_ok() {
+        if ping_server().await.is_ok() {
             return Ok(());
         }
         sleep(Duration::from_secs(1)).await;
@@ -112,7 +112,7 @@ impl LoginConfigData {
 }
 
 pub async fn command_login(args: LoginArgs) -> Result<()> {
-    if let Err(e) = ping().await {
+    if let Err(e) = ping_server().await {
         error!("{e}");
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;

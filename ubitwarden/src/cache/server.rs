@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::{error, info, warn};
 use std::{collections::HashMap, os::unix::io::AsRawFd};
 use tokio::{
     io::AsyncWriteExt,
@@ -9,6 +9,12 @@ use crate::{
     cache::common::{BW_UNIX_SOCKET_NAME, read_string, write_string},
     error::{Error, Result},
 };
+
+enum ServerResponse {
+    Quit,
+    Empty,
+    String(String),
+}
 
 struct CacheServer {
     listener: UnixListener,
@@ -62,7 +68,7 @@ impl CacheServer {
         Ok(self.self_uid == client_uid)
     }
 
-    fn parse_command(&mut self, command: &str) -> Result<Option<&String>> {
+    fn parse_command(&mut self, command: &str) -> Result<ServerResponse> {
         if let Some(kv) = command.strip_prefix("write:") {
             let comp: Vec<&str> = kv.splitn(2, ':').collect();
 
@@ -73,21 +79,23 @@ impl CacheServer {
                 info!("writing {key}");
 
                 self.storage.insert(key, val);
-
-                Ok(None)
+                Ok(ServerResponse::Empty)
             } else {
                 error!("invalid command format {command}");
                 return Err(Error::InvalidCommandFormat);
             }
         } else if let Some(key) = command.strip_prefix("read:") {
             info!("reading {key}");
-            let data = self.storage.get(key);
 
-            info!("read:{key} -> some={}", data.is_some());
-
-            Ok(data)
+            match self.storage.get(key) {
+                Some(v) => Ok(ServerResponse::String(v.clone())),
+                None => Ok(ServerResponse::Empty),
+            }
         } else if command.eq("ping") {
-            Ok(None)
+            Ok(ServerResponse::Empty)
+        } else if command.eq("stop") {
+            warn!("asked to stop");
+            Ok(ServerResponse::Quit)
         } else {
             return Err(Error::CommandNotFound {
                 command: command.to_string(),
@@ -128,9 +136,17 @@ impl CacheServer {
                 }
             };
 
-            if let Ok(Some(data)) = self.parse_command(&command) {
-                write_string(&mut client, data).await?;
-                client.flush().await?;
+            if let Ok(response) = self.parse_command(&command) {
+                match response {
+                    ServerResponse::Quit => break Ok(()),
+                    ServerResponse::Empty => {}
+                    ServerResponse::String(s) => {
+                        write_string(&mut client, s).await?;
+                        if let Err(e) = client.flush().await {
+                            error!("{e}");
+                        }
+                    }
+                }
             }
         }
     }

@@ -63,9 +63,14 @@ where
 // PUBLIC
 ////////////////////////////////////////////////////////////////////////////////
 
-pub async fn ping() -> Result<()> {
+pub async fn ping_server() -> Result<()> {
     let mut stream = UnixStream::connect(BW_UNIX_SOCKET_NAME).await?;
     write_string(&mut stream, "ping").await
+}
+
+pub async fn stop_server() -> Result<()> {
+    let mut stream = UnixStream::connect(BW_UNIX_SOCKET_NAME).await?;
+    write_string(&mut stream, "stop").await
 }
 
 pub async fn store_user_data<D, K>(key: K, data: D) -> Result<()>
