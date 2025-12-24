@@ -17,35 +17,33 @@ pub struct ServerArgs {
 }
 
 pub async fn command_server(args: ServerArgs) -> Result<()> {
-    let running = if ping_server().await.is_ok() {
+    let running = ping_server().await.is_ok();
+
+    if running {
         info!("server is running");
-        true
-    } else {
-        false
-    };
+    }
 
-    if args.stop && running {
-        warn!("stopping the server");
-        stop_server().await?;
+    match (args.stop, running) {
+        (true, true) => {
+            warn!("stopping the server");
+            stop_server().await?;
 
-        //
-        // wait until ping fails
-        //
-        for _ in 0..5 {
-            if ping_server().await.is_err() {
-                info!("server stopped");
-                return Ok(());
+            // Wait until ping fails
+            for _ in 0..5 {
+                if ping_server().await.is_err() {
+                    info!("server stopped");
+                    return Ok(());
+                }
+                sleep(Duration::from_secs(1)).await;
             }
-            sleep(Duration::from_secs(1)).await;
+
+            bail!("Unable to stop server");
         }
-
-        bail!("Unable to stop server");
-    } else if args.stop && !running {
-        Ok(())
-    } else {
-        info!("starting the server");
-        cache_server().await?;
-
-        Ok(())
+        (true, false) => Ok(()),
+        (false, _) => {
+            info!("starting the server");
+            cache_server().await?;
+            Ok(())
+        }
     }
 }
