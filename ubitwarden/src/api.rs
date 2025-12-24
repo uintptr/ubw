@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
 use derive_more::Display;
 use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_repr::Deserialize_repr;
 
-use crate::{crypto::build_password_hash, error::Error};
+use crate::{
+    crypto::build_password_hash,
+    error::{Error, Result},
+};
 
 const UBW_DEVICE_ID: &str = "2c28ca63-da34-452d-9d54-3180c2d1165e";
 

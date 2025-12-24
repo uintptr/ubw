@@ -1,8 +1,9 @@
-use anyhow::Result;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
 };
+
+use crate::error::Result;
 
 pub(crate) const BW_UNIX_SOCKET_NAME: &str = "\0ubw";
 

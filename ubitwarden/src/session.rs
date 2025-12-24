@@ -1,10 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::Result;
 use log::info;
 use serde::{Deserialize, Serialize};
 
-use crate::{api::BwAuth, credentials::BwCredentials, crypto::BwCrypt};
+use crate::{api::BwAuth, credentials::BwCredentials, crypto::BwCrypt, error::Result};
 
 const BW_SESSION_EXPIRED_SEC: u64 = 30;
 

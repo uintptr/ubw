@@ -39,5 +39,7 @@ where
 
     let encoded_creds = serde_json::to_string(&creds)?;
 
-    store_user_data("credentials", encoded_creds).await
+    store_user_data("credentials", encoded_creds).await?;
+
+    Ok(())
 }

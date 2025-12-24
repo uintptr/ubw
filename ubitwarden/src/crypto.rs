@@ -2,11 +2,13 @@ use std::{num::NonZero, str::FromStr};
 
 use log::{error, info};
 
-use anyhow::Result;
 use bitwarden_crypto::{EncString, HashPurpose, Kdf, KeyDecryptable, MasterKey, SymmetricCryptoKey};
 use totp_rs::{Algorithm, Secret, TOTP};
 
-use crate::{api::BwAuth, error::Error};
+use crate::{
+    api::BwAuth,
+    error::{Error, Result},
+};
 
 pub struct BwCrypt {
     symmetric_key: SymmetricCryptoKey,

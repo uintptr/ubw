@@ -70,7 +70,8 @@ async fn fetch_session() -> Result<BwSession> {
 
 async fn store_session(session: &BwSession) -> Result<()> {
     let encoded_session = serde_json::to_string(session)?;
-    store_user_data("session", encoded_session).await
+    store_user_data("session", encoded_session).await?;
+    Ok(())
 }
 
 async fn load_session() -> Result<BwSession> {
@@ -200,10 +201,12 @@ async fn main() -> Result<()> {
     StaplesLogger::new().with_colors().with_log_level(log_level).start();
 
     match args.command {
-        Commands::Login(login) => command_login(login).await,
-        Commands::Server => cache_server().await,
-        Commands::Ciphers => command_ciphers().await,
-        Commands::Cipher(cipher) => command_cipher(cipher.id).await,
-        Commands::Totp(totp) => command_totp(totp.id).await,
+        Commands::Login(login) => command_login(login).await?,
+        Commands::Server => cache_server().await?,
+        Commands::Ciphers => command_ciphers().await?,
+        Commands::Cipher(cipher) => command_cipher(cipher.id).await?,
+        Commands::Totp(totp) => command_totp(totp.id).await?,
     }
+
+    Ok(())
 }

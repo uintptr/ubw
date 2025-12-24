@@ -1,4 +1,3 @@
-use anyhow::{Context, Result, bail};
 use log::{error, info};
 use std::{collections::HashMap, os::unix::io::AsRawFd};
 use tokio::{
@@ -6,7 +5,10 @@ use tokio::{
     net::{UnixListener, UnixStream},
 };
 
-use crate::cache::common::{BW_UNIX_SOCKET_NAME, read_string, write_string};
+use crate::{
+    cache::common::{BW_UNIX_SOCKET_NAME, read_string, write_string},
+    error::{Error, Result},
+};
 
 struct CacheServer {
     listener: UnixListener,
@@ -31,7 +33,7 @@ fn get_peer_pid(client: &UnixStream) -> Result<u32> {
     if ret == 0 {
         Ok(cred.uid)
     } else {
-        bail!("unable to find pid for client")
+        Err(Error::ClientPidNotFound)
     }
 }
 
@@ -65,8 +67,8 @@ impl CacheServer {
             let comp: Vec<&str> = kv.splitn(2, ':').collect();
 
             if 2 == comp.len() {
-                let key = comp.first().context("empty key")?.to_string();
-                let val = comp.get(1).context("empty value")?.to_string();
+                let key = comp.first().ok_or(Error::CommandEmptyKey)?.to_string();
+                let val = comp.get(1).ok_or(Error::CommandEmptyValue)?.to_string();
 
                 info!("writing {key}");
 
@@ -75,7 +77,7 @@ impl CacheServer {
                 Ok(None)
             } else {
                 error!("invalid command format {command}");
-                bail!("invalid format for write");
+                return Err(Error::InvalidCommandFormat);
             }
         } else if let Some(key) = command.strip_prefix("read:") {
             info!("reading {key}");
@@ -87,7 +89,9 @@ impl CacheServer {
         } else if command.eq("ping") {
             Ok(None)
         } else {
-            bail!("not handler for {command}")
+            return Err(Error::CommandNotFound {
+                command: command.to_string(),
+            });
         }
     }
 
