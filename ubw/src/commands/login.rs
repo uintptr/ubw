@@ -33,6 +33,10 @@ pub struct LoginArgs {
     /// server url
     #[arg(short, long)]
     pub server_url: Option<String>,
+
+    /// force
+    #[arg(short, long)]
+    pub force: bool,
 }
 
 async fn spawn_server() -> Result<()> {
@@ -116,6 +120,17 @@ pub async fn command_login(args: LoginArgs) -> Result<()> {
         error!("{e}");
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;
+    } else if !args.force {
+        //
+        // unless force is specifed, we'll check that the server have creds
+        // and bail if it does.
+        //
+        // This way "ubw login" can be used multiple times without prompting
+        //
+        if fetch_credentials().await.is_ok() {
+            info!("already authenticated");
+            return Ok(());
+        }
     }
 
     let cache = LoginConfigData::from_file();

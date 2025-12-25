@@ -32,6 +32,11 @@ pub enum Error {
     CommandEmptyKey,
     #[error("Command empty value")]
     CommandEmptyValue,
+    #[error("Login Not Found")]
+    LoginNotFound,
+    #[error("Password Not Found")]
+    PasswordNotFound,
+
     //
     // 2d party
     //

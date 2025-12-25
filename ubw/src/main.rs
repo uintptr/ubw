@@ -7,6 +7,7 @@ use rstaples::logging::StaplesLogger;
 use ubw::commands::{
     ciphers::{command_cipher, command_ciphers},
     login::{LoginArgs, command_login},
+    password::command_password,
     server::{CacheArgs, command_cache},
     totp::command_totp,
 };
@@ -30,6 +31,8 @@ pub enum Commands {
     Cipher(IdArgs),
     /// Pull the TOTP for the specified id
     Totp(IdArgs),
+    /// Pull the password for the specified id
+    Password(IdArgs),
 }
 
 #[derive(Parser)]
@@ -62,6 +65,7 @@ async fn main() -> Result<()> {
         Commands::Ciphers => command_ciphers().await?,
         Commands::Cipher(cipher) => command_cipher(cipher.id).await?,
         Commands::Totp(totp) => command_totp(totp.id).await?,
+        Commands::Password(pass) => command_password(pass.id).await?,
     }
 
     Ok(())
