@@ -2,11 +2,25 @@ use std::env;
 
 use anyhow::Result;
 use dialoguer::Password;
-use log::info;
+use log::{error, info, warn};
 use ubitwarden::{
+    api::BwApi,
     cache::common::{fetch_user_data, store_user_data},
     credentials::BwCredentials,
+    session::BwSession,
 };
+
+async fn fetch_session() -> Result<BwSession> {
+    let data = fetch_user_data("session").await?;
+    let session: BwSession = serde_json::from_str(&data)?;
+    Ok(session)
+}
+
+async fn store_session(session: &BwSession) -> Result<()> {
+    let encoded_session = serde_json::to_string(session)?;
+    store_user_data("session", encoded_session).await?;
+    Ok(())
+}
 
 pub async fn fetch_credentials() -> Result<BwCredentials> {
     let data = fetch_user_data("credentials").await?;
@@ -42,4 +56,35 @@ where
     store_user_data("credentials", encoded_creds).await?;
 
     Ok(())
+}
+
+pub async fn load_session() -> Result<BwSession> {
+    if let Ok(session) = fetch_session().await {
+        if session.expired()? {
+            warn!("session expired");
+            //
+            // see if the session is still usable ( expired )
+            //
+        } else {
+            return Ok(session);
+        }
+    }
+
+    let creds = fetch_credentials().await?;
+
+    //
+    // Either it didn't exist or it was expired. let's rejoin
+    //
+    let api = BwApi::new(&creds.email, &creds.server_url)?;
+
+    let auth = api.auth(&creds.password).await?;
+
+    let session = BwSession::new(&creds, &auth)?;
+
+    // best effort. not fatal since we got what we wanted
+    if let Err(e) = store_session(&session).await {
+        error!("Unable to store session: ({e})");
+    }
+
+    Ok(session)
 }
