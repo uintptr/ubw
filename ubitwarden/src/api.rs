@@ -143,7 +143,7 @@ impl BwApi {
             .json::<serde_json::Value>()
             .await?;
 
-        dbg!(&auth_dict);
+        //dbg!(&auth_dict);
 
         let auth: BwAuth = serde_json::from_value(auth_dict)?;
 

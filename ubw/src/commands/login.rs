@@ -39,7 +39,7 @@ async fn spawn_server() -> Result<()> {
     let self_exe = env::current_exe()?;
 
     Command::new(self_exe)
-        .arg("server")
+        .arg("cache")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
