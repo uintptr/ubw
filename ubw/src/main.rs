@@ -3,7 +3,7 @@ use tabled::{Table, Tabled, settings::Style};
 
 use log::{error, warn};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use log::LevelFilter;
 use rstaples::logging::StaplesLogger;
 use ubitwarden::{
@@ -15,8 +15,8 @@ use ubitwarden::{
 };
 use ubw::{
     commands::{
-        login::{LoginArgs, command_login},
-        server::{ServerArgs, command_server},
+        login::{LoginArgs, command_login, login_from_cache},
+        server::{CacheArgs, command_cache},
     },
     common::fetch_credentials,
 };
@@ -30,7 +30,7 @@ struct CipherTable<'a> {
 }
 
 #[derive(Args)]
-pub struct CipherArgs {
+pub struct IdArgs {
     /// cipher id
     #[arg(short, long)]
     id: String,
@@ -38,16 +38,16 @@ pub struct CipherArgs {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Cache Server
+    Cache(CacheArgs),
     /// Create a new session
     Login(LoginArgs),
     /// List ciphers
     Ciphers,
     /// Pull cipher
-    Cipher(CipherArgs),
+    Cipher(IdArgs),
     /// Pull the TOTP for the specified id
-    Totp(CipherArgs),
-    /// Credential Server
-    Server(ServerArgs),
+    Totp(IdArgs),
 }
 
 #[derive(Parser)]
@@ -105,7 +105,11 @@ async fn load_session() -> Result<BwSession> {
     Ok(session)
 }
 
-fn get_totp(crypt: &BwCrypt, cipher: &BwCipher) -> Result<String> {
+async fn get_totp(crypt: &BwCrypt, cipher: &BwCipher) -> Result<String> {
+    if let Err(e) = login_from_cache().await {
+        bail!("Not logged in ({e})");
+    }
+
     if let Some(login) = &cipher.login
         && let Some(totp) = &login.totp
     {
@@ -116,11 +120,11 @@ fn get_totp(crypt: &BwCrypt, cipher: &BwCipher) -> Result<String> {
     }
 }
 
-fn display_ciphers(crypt: &BwCrypt, ciphers: &[BwCipher]) -> Result<()> {
+async fn display_ciphers(crypt: &BwCrypt, ciphers: &[BwCipher]) -> Result<()> {
     let mut cipher_table = Vec::new();
 
     for c in ciphers {
-        let totp = get_totp(crypt, c).unwrap_or_default();
+        let totp = get_totp(crypt, c).await.unwrap_or_default();
 
         let name: String = crypt.decrypt(&c.name)?.try_into()?;
 
@@ -143,6 +147,10 @@ fn display_ciphers(crypt: &BwCrypt, ciphers: &[BwCipher]) -> Result<()> {
 }
 
 async fn command_ciphers() -> Result<()> {
+    if let Err(e) = login_from_cache().await {
+        bail!("Not logged in ({e})");
+    }
+
     let session = load_session().await?;
 
     let crypt = BwCrypt::from_encoded_key(session.key)?;
@@ -151,13 +159,17 @@ async fn command_ciphers() -> Result<()> {
 
     let ciphers = api.ciphers(&session.auth).await?;
 
-    display_ciphers(&crypt, &ciphers)
+    display_ciphers(&crypt, &ciphers).await
 }
 
 async fn command_cipher<I>(id: I) -> Result<()>
 where
     I: AsRef<str>,
 {
+    if let Err(e) = login_from_cache().await {
+        bail!("Not logged in ({e})");
+    }
+
     let session = load_session().await?;
 
     let crypt = BwCrypt::from_encoded_key(session.key)?;
@@ -166,7 +178,7 @@ where
 
     let cipher = api.cipher(&session.auth, id.as_ref()).await?;
 
-    display_ciphers(&crypt, &[cipher])
+    display_ciphers(&crypt, &[cipher]).await
 }
 
 async fn command_totp<I>(id: I) -> Result<()>
@@ -202,7 +214,7 @@ async fn main() -> Result<()> {
 
     match args.command {
         Commands::Login(login) => command_login(login).await?,
-        Commands::Server(a) => command_server(a).await?,
+        Commands::Cache(a) => command_cache(a).await?,
         Commands::Ciphers => command_ciphers().await?,
         Commands::Cipher(cipher) => command_cipher(cipher.id).await?,
         Commands::Totp(totp) => command_totp(totp.id).await?,

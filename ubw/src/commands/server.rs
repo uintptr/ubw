@@ -10,13 +10,13 @@ use ubitwarden::cache::{
 };
 #[derive(Args)]
 
-pub struct ServerArgs {
+pub struct CacheArgs {
     /// server url
     #[arg(short, long)]
     pub stop: bool,
 }
 
-pub async fn command_server(args: ServerArgs) -> Result<()> {
+pub async fn command_cache(args: CacheArgs) -> Result<()> {
     let running = ping_server().await.is_ok();
 
     if running {

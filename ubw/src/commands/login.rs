@@ -118,11 +118,11 @@ pub async fn command_login(args: LoginArgs) -> Result<()> {
         spawn_server().await?;
     }
 
-    let cached_data = LoginConfigData::from_file();
+    let cache = LoginConfigData::from_file();
 
     let email = if let Some(email) = &args.email {
         email
-    } else if let Ok(file) = &cached_data {
+    } else if let Ok(file) = &cache {
         &file.email
     } else {
         bail!("missing email");
@@ -130,7 +130,7 @@ pub async fn command_login(args: LoginArgs) -> Result<()> {
 
     let server_url = if let Some(server_url) = &args.server_url {
         server_url
-    } else if let Ok(file) = &cached_data {
+    } else if let Ok(file) = &cache {
         &file.server_url
     } else {
         bail!("missing server url");
@@ -140,4 +140,21 @@ pub async fn command_login(args: LoginArgs) -> Result<()> {
     fetch_credentials().await?;
 
     LoginConfigData::new(&email, &server_url).sync()
+}
+
+pub async fn login_from_cache() -> Result<()> {
+    if let Err(e) = ping_server().await {
+        error!("{e}");
+        info!("unable to talk to the server. spawning a new one");
+        spawn_server().await?;
+    }
+
+    let cache = LoginConfigData::from_file()?;
+
+    if fetch_credentials().await.is_err() {
+        store_credentials(&cache.email, &cache.server_url).await?;
+        LoginConfigData::new(&cache.email, &cache.server_url).sync()?;
+    }
+
+    Ok(())
 }
