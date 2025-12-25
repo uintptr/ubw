@@ -31,7 +31,7 @@ where
     P: AsRef<str>,
 {
     let Some(nz_ndf) = NonZero::new(kdf_iterations) else {
-        return Err(Error::InvalidKDF.into());
+        return Err(Error::InvalidKDF);
     };
 
     let kdf = Kdf::PBKDF2 { iterations: nz_ndf };
@@ -46,7 +46,7 @@ impl BwCrypt {
         P: AsRef<str>,
     {
         let Some(nz_ndf) = NonZero::new(auth.kdf_iterations) else {
-            return Err(Error::InvalidKDF.into());
+            return Err(Error::InvalidKDF);
         };
 
         let kdf = Kdf::PBKDF2 { iterations: nz_ndf };

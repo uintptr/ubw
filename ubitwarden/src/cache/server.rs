@@ -82,7 +82,7 @@ impl CacheServer {
                 Ok(ServerResponse::Empty)
             } else {
                 error!("invalid command format {command}");
-                return Err(Error::InvalidCommandFormat);
+                Err(Error::InvalidCommandFormat)
             }
         } else if let Some(key) = command.strip_prefix("read:") {
             info!("reading {key}");
@@ -97,9 +97,9 @@ impl CacheServer {
             warn!("asked to stop");
             Ok(ServerResponse::Quit)
         } else {
-            return Err(Error::CommandNotFound {
+            Err(Error::CommandNotFound {
                 command: command.to_string(),
-            });
+            })
         }
     }
 

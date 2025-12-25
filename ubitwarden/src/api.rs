@@ -228,7 +228,7 @@ impl BwApi {
         {
             Ok(encrypted_totp)
         } else {
-            Err(Error::TotpNotFound.into())
+            Err(Error::TotpNotFound)
         }
     }
 

@@ -136,10 +136,10 @@ pub async fn command_login(args: LoginArgs) -> Result<()> {
         bail!("missing server url");
     };
 
-    store_credentials(&email, &server_url).await?;
+    store_credentials(email, server_url).await?;
     fetch_credentials().await?;
 
-    LoginConfigData::new(&email, &server_url).sync()
+    LoginConfigData::new(email, server_url).sync()
 }
 
 pub async fn login_from_cache() -> Result<()> {
