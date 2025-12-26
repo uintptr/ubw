@@ -34,15 +34,29 @@ where
     E: AsRef<str>,
     U: AsRef<str>,
 {
-    //
-    // helps with testing but not recommended
-    //
-    let password = if let Ok(password) = env::var("UBW_PASSWORD") {
-        info!("using UBW_PASSWORD=***********");
-        password.clone()
-    } else {
-        let prompt = format!("Password for {}", email.as_ref());
-        Password::new().with_prompt(prompt).interact()?
+    let api = BwApi::new(&email, &server_url)?;
+
+    let password = loop {
+        //
+        // helps with testing but not recommended
+        //
+        let password = if let Ok(password) = env::var("UBW_PASSWORD") {
+            info!("using UBW_PASSWORD=***********");
+            password.clone()
+        } else {
+            let prompt = format!("Password for {}", email.as_ref());
+            Password::new().with_prompt(prompt).interact()?
+        };
+
+        //
+        // try them
+        //
+        if let Err(e) = api.auth(&password).await {
+            error!("auth failure {e}");
+            continue;
+        }
+
+        break password;
     };
 
     let creds = BwCredentials {
