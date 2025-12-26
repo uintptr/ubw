@@ -10,14 +10,18 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+daemonize.workspace = true
 dialoguer.workspace = true
 dirs.workspace = true
+ed25519-dalek.workspace = true
 libc.workspace = true
 log.workspace = true
 nix.workspace = true
 rstaples.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+signature.workspace = true
+ssh-agent-lib.workspace = true
 tabled.workspace = true
 tokio.workspace = true
 ubitwarden = { path = "../ubitwarden" }

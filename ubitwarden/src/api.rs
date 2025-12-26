@@ -38,13 +38,27 @@ pub struct BwLogin {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BwSshKey {
+    #[serde(rename = "keyFingerprint")]
+    pub key_fingerprint: String,
+    #[serde(rename = "privateKey")]
+    pub private_key: String,
+    #[serde(rename = "publicKey")]
+    pub public_key: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct BwCipher {
     pub id: String,
     pub data: BwCipherData,
     pub name: String,
+    #[serde(rename = "deletedDate")]
+    pub deleted_data: Option<String>,
     #[serde(rename = "type")]
     pub cipher_type: BwCipherType,
     pub login: Option<BwLogin>,
+    #[serde(rename = "sshKey")]
+    pub ssh_key: Option<BwSshKey>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -164,6 +178,28 @@ impl BwApi {
         Ok(data)
     }
 
+    pub async fn cipher<I>(&self, auth: &BwAuth, id: I) -> Result<BwCipher>
+    where
+        I: AsRef<str>,
+    {
+        let url = format!("{}/api/ciphers/{}", self.server, id.as_ref());
+
+        let cipher_dict = self
+            .client
+            .get(url)
+            .bearer_auth(&auth.access_token)
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+
+        dbg!(&cipher_dict);
+
+        let cipher: BwCipher = serde_json::from_value(cipher_dict)?;
+
+        Ok(cipher)
+    }
+
     pub async fn ciphers(&self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
         let mut cont_token = None;
 
@@ -195,26 +231,6 @@ impl BwApi {
         }
 
         Ok(ciphers)
-    }
-
-    pub async fn cipher<I>(&self, auth: &BwAuth, id: I) -> Result<BwCipher>
-    where
-        I: AsRef<str>,
-    {
-        let url = format!("{}/api/ciphers/{}", self.server, id.as_ref());
-
-        let cipher_dict = self
-            .client
-            .get(url)
-            .bearer_auth(&auth.access_token)
-            .send()
-            .await?
-            .json::<serde_json::Value>()
-            .await?;
-
-        let cipher: BwCipher = serde_json::from_value(cipher_dict)?;
-
-        Ok(cipher)
     }
 
     pub async fn totp<I>(&self, auth: &BwAuth, id: I) -> Result<String>

@@ -1,19 +1,17 @@
-use std::{collections::HashMap, os::unix::io::AsRawFd, time::Duration};
+use std::{collections::HashMap, os::unix::io::AsRawFd};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::Args;
 use log::{error, info, warn};
 use tokio::io::AsyncWriteExt;
 use tokio::{
     net::{UnixListener, UnixStream},
     select,
-    signal::unix::{SignalKind, signal},
-    sync::watch::{self, Receiver},
-    time::sleep,
+    sync::watch::Receiver,
 };
 use ubitwarden::error::Error;
 
-use crate::commands::cache::utils::{create_socket_name, ping_cache, read_string, stop_cache, write_string};
+use crate::commands::agent::utils::{create_socket_name, read_string, write_string};
 
 #[derive(Args)]
 pub struct CacheArgs {
@@ -28,7 +26,7 @@ enum ServerResponse {
     String(String),
 }
 
-struct CacheServer {
+pub struct CacheServer {
     listener: UnixListener,
     self_uid: u32,
     storage: HashMap<String, String>,
@@ -167,90 +165,6 @@ impl CacheServer {
                     }
                 },
             }
-        }
-    }
-}
-
-async fn cache_server() -> Result<()> {
-    let mut server = CacheServer::new()?;
-
-    let (quit_tx, quit_rx) = watch::channel(false);
-
-    let mut t = tokio::spawn(async move {
-        let ret = server.accept_loop(quit_rx).await;
-
-        if let Err(e) = &ret {
-            error!("server returned {e}");
-        }
-
-        ret
-    });
-
-    let mut sighup = signal(SignalKind::hangup())?;
-    let mut sigterm = signal(SignalKind::terminate())?;
-    let mut sigint = signal(SignalKind::interrupt())?;
-
-    loop {
-        select! {
-            _ = sighup.recv() => {
-                info!("ignoring SIGHUP");
-            }
-            _ = sigint.recv() => {
-                info!("ignoring SIGINT");
-            }
-            _ = sigterm.recv() => {
-                info!("received SIGTERM. we're leaving");
-                quit_tx.send(true)?;
-            }
-            ret = &mut t => {
-                warn!("thread returned, we're done");
-                match ret{
-                    Ok(_) => break Ok(()),
-                    Err(e) => break Err(e.into())
-                }
-            }
-        }
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// PUBLIC
-////////////////////////////////////////////////////////////////////////////////
-pub async fn command_cache(args: CacheArgs) -> Result<()> {
-    let running = ping_cache().await.is_ok();
-
-    if running {
-        info!("server is running");
-    }
-
-    match (args.stop, running) {
-        (true, true) => {
-            warn!("stopping the server");
-            stop_cache().await?;
-
-            // Wait until ping fails
-            for _ in 0..5 {
-                if ping_cache().await.is_err() {
-                    info!("server stopped");
-                    return Ok(());
-                }
-                sleep(Duration::from_secs(1)).await;
-            }
-
-            bail!("Unable to stop server");
-        }
-        (true, false) => Ok(()),
-        (false, false) => {
-            info!("starting the server");
-            //
-            // this blocks!
-            //
-            cache_server().await?;
-            Ok(())
-        }
-        (false, true) => {
-            info!("already running");
-            Ok(())
         }
     }
 }

@@ -1,18 +1,15 @@
-use std::{
-    env, fs,
-    io::Write,
-    process::{Command, Stdio},
-    time::Duration,
-};
+use std::{env, fs, io::Write};
 
 use clap::Args;
 
 use anyhow::{Result, anyhow, bail};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use tokio::time::sleep;
 
-use crate::commands::cache::utils::{fetch_credentials, ping_cache, store_credentials};
+use crate::commands::agent::{
+    server::spawn_server,
+    utils::{fetch_credentials, ping_cache, store_credentials},
+};
 
 const LOGIN_FILE_NAME: &str = "login.json";
 const CONFIG_DIR: &str = env!("CARGO_PKG_NAME");
@@ -36,31 +33,6 @@ pub struct LoginArgs {
     /// force
     #[arg(short, long)]
     pub force: bool,
-}
-
-async fn spawn_server() -> Result<()> {
-    let self_exe = env::current_exe()?;
-
-    info!("spawning {}", self_exe.display());
-
-    Command::new(self_exe)
-        .arg("cache")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
-
-    //
-    // wait until we can ping it
-    //
-    for _ in 0..4 {
-        if ping_cache().await.is_ok() {
-            return Ok(());
-        }
-        sleep(Duration::from_secs(1)).await;
-    }
-
-    bail!("Unable to spawn credential server")
 }
 
 impl LoginConfigData {

@@ -5,7 +5,7 @@ use log::LevelFilter;
 use rstaples::logging::StaplesLogger;
 
 use ubw::commands::{
-    cache::server::{CacheArgs, command_cache},
+    agent::server::{AgentArgs, command_agent},
     ciphers::{command_cipher, command_ciphers},
     login::{LoginArgs, command_login},
     password::command_password,
@@ -22,7 +22,7 @@ pub struct IdArgs {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Cache Server
-    Cache(CacheArgs),
+    Agent(AgentArgs),
     /// Create a new session
     Login(LoginArgs),
     /// List ciphers
@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
 
     match args.command {
         Commands::Login(login) => command_login(login).await?,
-        Commands::Cache(a) => command_cache(a).await?,
+        Commands::Agent(a) => command_agent(a).await?,
         Commands::Ciphers => command_ciphers().await?,
         Commands::Cipher(cipher) => command_cipher(cipher.id).await?,
         Commands::Totp(totp) => command_totp(totp.id).await?,
