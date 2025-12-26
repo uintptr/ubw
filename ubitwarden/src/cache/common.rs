@@ -5,8 +5,6 @@ use tokio::{
 
 use crate::error::Result;
 
-pub(crate) const BW_UNIX_SOCKET_NAME: &str = "\0ubw";
-
 async fn store_data<K, V>(key: K, value: V) -> Result<()>
 where
     K: AsRef<str>,
@@ -14,7 +12,8 @@ where
 {
     let command = format!("write:{}:{}", key.as_ref(), value.as_ref());
 
-    let mut stream = UnixStream::connect(BW_UNIX_SOCKET_NAME).await?;
+    let socket_name = create_socket_name();
+    let mut stream = UnixStream::connect(socket_name).await?;
 
     write_string(&mut stream, command).await
 }
@@ -22,7 +21,8 @@ where
 async fn fetch_data(key: &str) -> Result<String> {
     let command = format!("read:{key}");
 
-    let mut stream = UnixStream::connect(BW_UNIX_SOCKET_NAME).await?;
+    let socket_name = create_socket_name();
+    let mut stream = UnixStream::connect(socket_name).await?;
 
     write_string(&mut stream, command).await?;
     read_string(&mut stream).await
@@ -31,6 +31,11 @@ async fn fetch_data(key: &str) -> Result<String> {
 ////////////////////////////////////////////////////////////////////////////////
 // PROTECTED
 ////////////////////////////////////////////////////////////////////////////////
+
+pub(crate) fn create_socket_name() -> String {
+    let username = whoami::username();
+    format!("\0ubw_{username}")
+}
 
 pub(crate) async fn read_string(stream: &mut UnixStream) -> Result<String> {
     let len = stream.read_i32().await?;
@@ -64,12 +69,14 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 
 pub async fn ping_server() -> Result<()> {
-    let mut stream = UnixStream::connect(BW_UNIX_SOCKET_NAME).await?;
+    let socket_name = create_socket_name();
+    let mut stream = UnixStream::connect(socket_name).await?;
     write_string(&mut stream, "ping").await
 }
 
 pub async fn stop_server() -> Result<()> {
-    let mut stream = UnixStream::connect(BW_UNIX_SOCKET_NAME).await?;
+    let socket_name = create_socket_name();
+    let mut stream = UnixStream::connect(socket_name).await?;
     write_string(&mut stream, "stop").await
 }
 

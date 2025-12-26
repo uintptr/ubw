@@ -6,7 +6,7 @@ use tokio::{
 };
 
 use crate::{
-    cache::common::{BW_UNIX_SOCKET_NAME, read_string, write_string},
+    cache::common::{create_socket_name, read_string, write_string},
     error::{Error, Result},
 };
 
@@ -47,7 +47,8 @@ impl CacheServer {
     pub fn new() -> Result<Self> {
         info!("binding unix socket");
 
-        let listener = UnixListener::bind(BW_UNIX_SOCKET_NAME)?;
+        let socket_name = create_socket_name();
+        let listener = UnixListener::bind(socket_name)?;
 
         let self_uid = nix::unistd::getuid().as_raw();
 
