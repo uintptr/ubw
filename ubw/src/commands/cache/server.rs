@@ -75,9 +75,7 @@ impl CacheServer {
 
     fn verify_client(&self, client: &UnixStream) -> Result<bool> {
         let client_uid = get_peer_pid(client)?;
-
         info!("client pid={client_uid}");
-
         Ok(self.self_uid == client_uid)
     }
 
@@ -145,6 +143,7 @@ impl CacheServer {
             info!("accepting clients");
 
             select! {
+                // this'll get signaled after a SIGTERM and we'll break out
                 _ = quit_rx.changed() => break Ok(()),
                 accept_ret = self.listener.accept() => {
                     let ( client, _ ) = match accept_ret {
