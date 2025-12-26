@@ -8,7 +8,7 @@ use ubw::commands::{
     ciphers::{command_cipher, command_ciphers},
     login::{LoginArgs, command_login},
     password::command_password,
-    server::{CacheArgs, command_cache},
+    server::cache::{CacheArgs, command_cache},
     totp::command_totp,
 };
 

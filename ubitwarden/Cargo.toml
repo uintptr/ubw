@@ -4,13 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-base64.workspace = true
 bitwarden-crypto.workspace = true
-clap.workspace = true
 derive_more.workspace = true
-libc.workspace = true
 log.workspace = true
-nix.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -18,7 +14,6 @@ serde_repr.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 totp-rs.workspace = true
-whoami.workspace = true
 
 [lints]
 workspace = true

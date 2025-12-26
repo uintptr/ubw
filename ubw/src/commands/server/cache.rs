@@ -1,17 +1,26 @@
+use std::{collections::HashMap, os::unix::io::AsRawFd, time::Duration};
+
+use anyhow::{Result, bail};
+use clap::Args;
 use log::{error, info, warn};
-use std::{collections::HashMap, os::unix::io::AsRawFd};
+use tokio::io::AsyncWriteExt;
 use tokio::{
-    io::AsyncWriteExt,
     net::{UnixListener, UnixStream},
     select,
     signal::unix::{SignalKind, signal},
     sync::watch::{self, Receiver},
+    time::sleep,
 };
+use ubitwarden::error::Error;
 
-use crate::{
-    cache::common::{create_socket_name, read_string, write_string},
-    error::{Error, Result},
-};
+use crate::commands::server::utils::{create_socket_name, ping_cache, read_string, stop_cache, write_string};
+
+#[derive(Args)]
+pub struct CacheArgs {
+    /// server url
+    #[arg(short, long)]
+    pub stop: bool,
+}
 
 enum ServerResponse {
     Quit,
@@ -42,7 +51,7 @@ fn get_peer_pid(client: &UnixStream) -> Result<u32> {
     if ret == 0 {
         Ok(cred.uid)
     } else {
-        Err(Error::ClientPidNotFound)
+        Err(Error::ClientPidNotFound.into())
     }
 }
 
@@ -86,7 +95,7 @@ impl CacheServer {
                 Ok(ServerResponse::Empty)
             } else {
                 error!("invalid command format {command}");
-                Err(Error::InvalidCommandFormat)
+                Err(Error::InvalidCommandFormat.into())
             }
         } else if let Some(key) = command.strip_prefix("read:") {
             info!("reading {key}");
@@ -103,7 +112,8 @@ impl CacheServer {
         } else {
             Err(Error::CommandNotFound {
                 command: command.to_string(),
-            })
+            }
+            .into())
         }
     }
 
@@ -112,7 +122,7 @@ impl CacheServer {
 
         if !verified {
             error!("Verification failed");
-            return Err(Error::ClientVerificationFailure);
+            return Err(Error::ClientVerificationFailure.into());
         }
 
         let command = read_string(&mut client).await?;
@@ -120,7 +130,7 @@ impl CacheServer {
         let response = self.parse_command(&command)?;
 
         match response {
-            ServerResponse::Quit => Err(Error::EndOfFile),
+            ServerResponse::Quit => Err(Error::EndOfFile.into()),
             ServerResponse::Empty => Ok(()),
             ServerResponse::String(s) => {
                 write_string(&mut client, s).await?;
@@ -148,9 +158,13 @@ impl CacheServer {
                     let client_ret = self.client_handler(client).await;
 
                     match client_ret {
-                        Ok(_) => {},
-                        Err(Error::EndOfFile) => break Ok(()),
-                        Err(e) => { error!("{e}") }
+                        Ok(()) => {},
+                        Err(e) => {
+                            if let Some(Error::EndOfFile) = e.downcast_ref::<Error>() {
+                                break Ok(());
+                            }
+                            error!("{e}");
+                        }
                     }
                 },
             }
@@ -197,6 +211,42 @@ pub async fn cache_server() -> Result<()> {
                     Err(e) => break Err(e.into())
                 }
             }
+        }
+    }
+}
+
+pub async fn command_cache(args: CacheArgs) -> Result<()> {
+    let running = ping_cache().await.is_ok();
+
+    if running {
+        info!("server is running");
+    }
+
+    match (args.stop, running) {
+        (true, true) => {
+            warn!("stopping the server");
+            stop_cache().await?;
+
+            // Wait until ping fails
+            for _ in 0..5 {
+                if ping_cache().await.is_err() {
+                    info!("server stopped");
+                    return Ok(());
+                }
+                sleep(Duration::from_secs(1)).await;
+            }
+
+            bail!("Unable to stop server");
+        }
+        (true, false) => Ok(()),
+        (false, false) => {
+            info!("starting the server");
+            cache_server().await?;
+            Ok(())
+        }
+        (false, true) => {
+            info!("already running");
+            Ok(())
         }
     }
 }

@@ -11,9 +11,11 @@ use anyhow::{Result, anyhow, bail};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
-use ubitwarden::cache::common::ping_server;
 
-use crate::common::{fetch_credentials, store_credentials};
+use crate::{
+    commands::server::utils::ping_cache,
+    common::{fetch_credentials, store_credentials},
+};
 
 const LOGIN_FILE_NAME: &str = "login.json";
 const CONFIG_DIR: &str = env!("CARGO_PKG_NAME");
@@ -55,7 +57,7 @@ async fn spawn_server() -> Result<()> {
     // wait until we can ping it
     //
     for _ in 0..4 {
-        if ping_server().await.is_ok() {
+        if ping_cache().await.is_ok() {
             return Ok(());
         }
         sleep(Duration::from_secs(1)).await;
@@ -118,7 +120,7 @@ impl LoginConfigData {
 }
 
 pub async fn command_login(args: LoginArgs) -> Result<()> {
-    if let Err(e) = ping_server().await {
+    if let Err(e) = ping_cache().await {
         warn!("{e}");
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;
@@ -160,7 +162,7 @@ pub async fn command_login(args: LoginArgs) -> Result<()> {
 }
 
 pub async fn login_from_cache() -> Result<()> {
-    if let Err(e) = ping_server().await {
+    if let Err(e) = ping_cache().await {
         error!("{e}");
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;

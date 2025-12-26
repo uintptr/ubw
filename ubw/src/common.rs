@@ -3,12 +3,9 @@ use std::env;
 use anyhow::Result;
 use dialoguer::Password;
 use log::{error, info, warn};
-use ubitwarden::{
-    api::BwApi,
-    cache::common::{fetch_user_data, store_user_data},
-    credentials::BwCredentials,
-    session::BwSession,
-};
+use ubitwarden::{api::BwApi, credentials::BwCredentials, session::BwSession};
+
+use crate::commands::server::utils::{fetch_user_data, store_user_data};
 
 async fn fetch_session() -> Result<BwSession> {
     let data = fetch_user_data("session").await?;

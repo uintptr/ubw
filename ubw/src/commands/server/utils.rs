@@ -1,9 +1,8 @@
+use anyhow::Result;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
 };
-
-use crate::error::Result;
 
 async fn store_data<K, V>(key: K, value: V) -> Result<()>
 where
@@ -68,13 +67,13 @@ where
 // PUBLIC
 ////////////////////////////////////////////////////////////////////////////////
 
-pub async fn ping_server() -> Result<()> {
+pub async fn ping_cache() -> Result<()> {
     let socket_name = create_socket_name();
     let mut stream = UnixStream::connect(socket_name).await?;
     write_string(&mut stream, "ping").await
 }
 
-pub async fn stop_server() -> Result<()> {
+pub async fn stop_cache() -> Result<()> {
     let socket_name = create_socket_name();
     let mut stream = UnixStream::connect(socket_name).await?;
     write_string(&mut stream, "stop").await

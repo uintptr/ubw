@@ -2229,13 +2229,9 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 name = "ubitwarden"
 version = "0.1.4"
 dependencies = [
- "base64",
  "bitwarden-crypto",
- "clap",
  "derive_more",
- "libc",
  "log",
- "nix",
  "reqwest",
  "serde",
  "serde_json",
@@ -2243,7 +2239,6 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "totp-rs",
- "whoami",
 ]
 
 [[package]]
@@ -2254,13 +2249,16 @@ dependencies = [
  "clap",
  "dialoguer",
  "dirs",
+ "libc",
  "log",
+ "nix",
  "rstaples",
  "serde",
  "serde_json",
  "tabled",
  "tokio",
  "ubitwarden",
+ "whoami",
 ]
 
 [[package]]
