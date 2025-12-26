@@ -36,6 +36,10 @@ pub enum Error {
     LoginNotFound,
     #[error("Password Not Found")]
     PasswordNotFound,
+    #[error("Client Verification Failure")]
+    ClientVerificationFailure,
+    #[error("End Of File")]
+    EndOfFile,
 
     //
     // 2d party
@@ -62,4 +66,8 @@ pub enum Error {
     TotpSecretError(#[from] totp_rs::SecretParseError),
     #[error(transparent)]
     TotpUrlError(#[from] totp_rs::TotpUrlError),
+    #[error(transparent)]
+    JoinFailure(#[from] tokio::task::JoinError),
+    #[error(transparent)]
+    SendBoolError(#[from] tokio::sync::watch::error::SendError<bool>),
 }

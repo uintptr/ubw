@@ -3,6 +3,9 @@ use std::{collections::HashMap, os::unix::io::AsRawFd};
 use tokio::{
     io::AsyncWriteExt,
     net::{UnixListener, UnixStream},
+    select,
+    signal::unix::{SignalKind, signal},
+    sync::watch::{self, Receiver},
 };
 
 use crate::{
@@ -104,50 +107,49 @@ impl CacheServer {
         }
     }
 
-    pub async fn accept_loop(&mut self) -> Result<()> {
+    async fn client_handler(&mut self, mut client: UnixStream) -> Result<()> {
+        let verified = self.verify_client(&client)?;
+
+        if !verified {
+            error!("Verification failed");
+            return Err(Error::ClientVerificationFailure);
+        }
+
+        let command = read_string(&mut client).await?;
+
+        let response = self.parse_command(&command)?;
+
+        match response {
+            ServerResponse::Quit => Err(Error::EndOfFile),
+            ServerResponse::Empty => Ok(()),
+            ServerResponse::String(s) => {
+                write_string(&mut client, s).await?;
+                client.flush().await?;
+                Ok(())
+            }
+        }
+    }
+
+    pub async fn accept_loop(&mut self, mut quit_rx: Receiver<bool>) -> Result<()> {
         loop {
             info!("accepting clients");
 
-            let (mut client, _) = match self.listener.accept().await {
-                Ok(v) => v,
-                Err(e) => {
-                    error!("accept failure ({e})");
-                    break Err(e.into());
-                }
-            };
-
-            let verified = match self.verify_client(&client) {
-                Ok(v) => v,
-                Err(e) => {
-                    error!("unable to verify client ({e})");
-                    continue;
-                }
-            };
-
-            if !verified {
-                error!("Verification failed");
-                continue;
-            }
-
-            let command = match read_string(&mut client).await {
-                Ok(v) => v,
-                Err(e) => {
-                    error!("read failure ({e})");
-                    continue;
-                }
-            };
-
-            if let Ok(response) = self.parse_command(&command) {
-                match response {
-                    ServerResponse::Quit => break Ok(()),
-                    ServerResponse::Empty => {}
-                    ServerResponse::String(s) => {
-                        write_string(&mut client, s).await?;
-                        if let Err(e) = client.flush().await {
-                            error!("{e}");
+            select! {
+                _ = quit_rx.changed() => break Ok(()),
+                accept_ret = self.listener.accept() => {
+                    let ( client, _ ) = match accept_ret {
+                        Ok(v) => v,
+                        Err(e) => {
+                            error!("accept failure ({e})");
+                            break Err(e.into());
                         }
+                    };
+
+
+                    if let Err(e) = self.client_handler(client).await{
+                        error!("{e}");
                     }
-                }
+                },
             }
         }
     }
@@ -155,5 +157,43 @@ impl CacheServer {
 
 pub async fn cache_server() -> Result<()> {
     let mut server = CacheServer::new()?;
-    server.accept_loop().await
+
+    let (quit_tx, quit_rx) = watch::channel(false);
+
+    let mut t = tokio::spawn(async move {
+        let ret = server.accept_loop(quit_rx).await;
+
+        if let Err(e) = &ret {
+            error!("server returned {e}");
+        }
+
+        ret
+    });
+
+    let mut sighup = signal(SignalKind::hangup())?;
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut sigint = signal(SignalKind::interrupt())?;
+
+    loop {
+        select! {
+            _ = sighup.recv() => {
+                info!("ignoring SIGHUP");
+            }
+            _ = sigterm.recv() => {
+                info!("received SIGTERM. we're leaving");
+                quit_tx.send(true)?;
+            }
+            _ = sigint.recv() => {
+                info!("received SIGINT. we're leaving");
+                quit_tx.send(true)?;
+            }
+            ret = &mut t => {
+                warn!("thread returned, we're done");
+                match ret{
+                    Ok(_) => break Ok(()),
+                    Err(e) => break Err(e.into())
+                }
+            }
+        }
+    }
 }
