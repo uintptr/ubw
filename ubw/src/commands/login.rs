@@ -12,10 +12,7 @@ use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
-use crate::{
-    commands::server::utils::ping_cache,
-    common::{fetch_credentials, store_credentials},
-};
+use crate::commands::cache::utils::{fetch_credentials, ping_cache, store_credentials};
 
 const LOGIN_FILE_NAME: &str = "login.json";
 const CONFIG_DIR: &str = env!("CARGO_PKG_NAME");

@@ -5,10 +5,10 @@ use log::LevelFilter;
 use rstaples::logging::StaplesLogger;
 
 use ubw::commands::{
+    cache::server::{CacheArgs, command_cache},
     ciphers::{command_cipher, command_ciphers},
     login::{LoginArgs, command_login},
     password::command_password,
-    server::cache::{CacheArgs, command_cache},
     totp::command_totp,
 };
 

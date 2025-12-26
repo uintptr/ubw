@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use ubitwarden::{api::BwApi, crypto::BwCrypt, error::Error};
 
-use crate::{commands::login::login_from_cache, common::load_session};
+use crate::commands::{cache::utils::load_session, login::login_from_cache};
 
 pub async fn command_password<I>(id: I) -> Result<()>
 where

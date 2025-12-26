@@ -13,7 +13,7 @@ use tokio::{
 };
 use ubitwarden::error::Error;
 
-use crate::commands::server::utils::{create_socket_name, ping_cache, read_string, stop_cache, write_string};
+use crate::commands::cache::utils::{create_socket_name, ping_cache, read_string, stop_cache, write_string};
 
 #[derive(Args)]
 pub struct CacheArgs {
@@ -172,7 +172,7 @@ impl CacheServer {
     }
 }
 
-pub async fn cache_server() -> Result<()> {
+async fn cache_server() -> Result<()> {
     let mut server = CacheServer::new()?;
 
     let (quit_tx, quit_rx) = watch::channel(false);
@@ -215,6 +215,9 @@ pub async fn cache_server() -> Result<()> {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// PUBLIC
+////////////////////////////////////////////////////////////////////////////////
 pub async fn command_cache(args: CacheArgs) -> Result<()> {
     let running = ping_cache().await.is_ok();
 
