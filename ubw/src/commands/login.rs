@@ -42,6 +42,8 @@ pub struct LoginArgs {
 async fn spawn_server() -> Result<()> {
     let self_exe = env::current_exe()?;
 
+    info!("spawning {}", self_exe.display());
+
     Command::new(self_exe)
         .arg("cache")
         .stdin(Stdio::null())

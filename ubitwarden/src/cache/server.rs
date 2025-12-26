@@ -145,9 +145,12 @@ impl CacheServer {
                         }
                     };
 
+                    let client_ret = self.client_handler(client).await;
 
-                    if let Err(e) = self.client_handler(client).await{
-                        error!("{e}");
+                    match client_ret {
+                        Ok(_) => {},
+                        Err(Error::EndOfFile) => break Ok(()),
+                        Err(e) => { error!("{e}") }
                     }
                 },
             }
@@ -185,7 +188,7 @@ pub async fn cache_server() -> Result<()> {
             }
             _ = sigint.recv() => {
                 info!("received SIGINT. we're leaving");
-                quit_tx.send(true)?;
+                info!("ignoring SIGINT");
             }
             ret = &mut t => {
                 warn!("thread returned, we're done");
