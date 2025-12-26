@@ -196,13 +196,12 @@ async fn cache_server() -> Result<()> {
             _ = sighup.recv() => {
                 info!("ignoring SIGHUP");
             }
+            _ = sigint.recv() => {
+                info!("ignoring SIGINT");
+            }
             _ = sigterm.recv() => {
                 info!("received SIGTERM. we're leaving");
                 quit_tx.send(true)?;
-            }
-            _ = sigint.recv() => {
-                info!("received SIGINT. we're leaving");
-                info!("ignoring SIGINT");
             }
             ret = &mut t => {
                 warn!("thread returned, we're done");
@@ -244,6 +243,9 @@ pub async fn command_cache(args: CacheArgs) -> Result<()> {
         (true, false) => Ok(()),
         (false, false) => {
             info!("starting the server");
+            //
+            // this blocks!
+            //
             cache_server().await?;
             Ok(())
         }
