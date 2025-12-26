@@ -117,7 +117,7 @@ impl BwCrypt {
                     Ok(otp)
                 }
                 Err(e) => {
-                    error!("Unable to parse ({e}");
+                    error!("Unable to parse ({e})");
                     Err(e.into())
                 }
             }
