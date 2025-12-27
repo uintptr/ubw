@@ -63,14 +63,12 @@ async fn main() -> Result<()> {
     StaplesLogger::new().with_colors().with_log_level(log_level).start();
 
     match args.command {
-        Commands::Login(login) => command_login(login).await?,
-        Commands::Agent(a) => command_agent(a).await?,
-        Commands::Ciphers => command_ciphers().await?,
-        Commands::Cipher(cipher) => command_cipher(cipher.id).await?,
-        Commands::Totp(totp) => command_totp(totp.id).await?,
-        Commands::Password(pass) => command_password(pass.id).await?,
-        Commands::SshKeys => command_ssh_keys().await?,
+        Commands::Login(login) => command_login(login).await,
+        Commands::Agent(a) => command_agent(a).await,
+        Commands::Ciphers => command_ciphers().await,
+        Commands::Cipher(cipher) => command_cipher(cipher.id).await,
+        Commands::Totp(totp) => command_totp(totp.id).await,
+        Commands::Password(pass) => command_password(pass.id).await,
+        Commands::SshKeys => command_ssh_keys().await,
     }
-
-    Ok(())
 }
