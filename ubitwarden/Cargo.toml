@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 bitwarden-crypto.workspace = true
+bitwarden-encoding.workspace = true
 derive_more.workspace = true
 log.workspace = true
 reqwest.workspace = true

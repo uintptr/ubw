@@ -1,5 +1,6 @@
 use std::{num::NonZero, str::FromStr};
 
+use bitwarden_encoding::B64;
 use log::{error, info};
 
 use bitwarden_crypto::{EncString, HashPurpose, Kdf, KeyDecryptable, MasterKey, SymmetricCryptoKey};
@@ -14,14 +15,15 @@ pub struct BwCrypt {
     symmetric_key: SymmetricCryptoKey,
 }
 
-fn hash_password<E, P>(email: E, password: P, kdf: &Kdf) -> Result<String>
+fn hash_password<E, P>(email: E, password: P, kdf: &Kdf) -> Result<B64>
 where
     E: AsRef<str>,
     P: AsRef<str>,
 {
     let master_key = MasterKey::derive(password.as_ref(), email.as_ref(), kdf)?;
     let password_hash =
-        master_key.derive_master_key_hash(password.as_ref().as_bytes(), HashPurpose::ServerAuthorization)?;
+        master_key.derive_master_key_hash(password.as_ref().as_bytes(), HashPurpose::ServerAuthorization);
+
     Ok(password_hash)
 }
 
@@ -36,7 +38,9 @@ where
 
     let kdf = Kdf::PBKDF2 { iterations: nz_ndf };
 
-    hash_password(email, password, &kdf)
+    let b64_data = hash_password(email, password, &kdf)?;
+
+    Ok(String::from(b64_data))
 }
 
 impl BwCrypt {
@@ -126,6 +130,6 @@ impl BwCrypt {
 
     #[must_use]
     pub fn export(&self) -> String {
-        self.symmetric_key.to_base64()
+        String::from(self.symmetric_key.to_base64())
     }
 }

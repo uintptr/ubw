@@ -60,15 +60,7 @@ async fn main() -> Result<()> {
         LevelFilter::Error
     };
 
-    if let Commands::Agent(_) = args.command {
-        StaplesLogger::new()
-            .with_colors()
-            .with_log_file("/home/joe/agent.log")
-            .with_log_level(LevelFilter::Info)
-            .start();
-    } else {
-        StaplesLogger::new().with_colors().with_log_level(log_level).start();
-    }
+    StaplesLogger::new().with_colors().with_log_level(log_level).start();
 
     match args.command {
         Commands::Login(login) => command_login(login).await?,
