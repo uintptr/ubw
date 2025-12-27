@@ -23,18 +23,10 @@ pub struct AgentArgs {
     pub stop: bool,
 }
 
-async fn cache_server() -> Result<()> {
-    let mut creds_server = CacheServer::new()?;
-    let ssh_server = SshAgentServer::new();
-
-    let (quit_tx, quit_rx) = watch::channel(false);
-
+async fn signal_handlers() -> Result<()> {
     let mut sighup = signal(SignalKind::hangup())?;
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
-
-    let mut creds_done = false;
-    let mut ssh_done = false;
 
     loop {
         select! {
@@ -46,6 +38,24 @@ async fn cache_server() -> Result<()> {
             }
             _ = sigterm.recv() => {
                 info!("received SIGTERM. we're leaving");
+                break Ok(())
+            }
+        }
+    }
+}
+
+async fn cache_server() -> Result<()> {
+    let mut creds_server = CacheServer::new()?;
+    let ssh_server = SshAgentServer::new();
+
+    let (quit_tx, quit_rx) = watch::channel(false);
+
+    let mut creds_done = false;
+    let mut ssh_done = false;
+
+    loop {
+        select! {
+            _ = signal_handlers() => {
                 quit_tx.send(true)?;
             }
             ret = creds_server.accept_loop(quit_rx.clone()), if !creds_done => {
@@ -115,10 +125,6 @@ pub async fn spawn_server() -> Result<()> {
 
 pub async fn command_agent(args: AgentArgs) -> Result<()> {
     let running = ping_cache().await.is_ok();
-
-    if running {
-        info!("server is running");
-    }
 
     match (args.stop, running) {
         (true, true) => {
