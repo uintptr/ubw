@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 use anyhow::{Result, anyhow, bail};
 use signature::Signer;
@@ -31,31 +32,24 @@ impl std::fmt::Display for SshAgentError {
 
 impl std::error::Error for SshAgentError {}
 
-/*
-struct UbwSshAgentCache {
-    keys: HashMap<String, PrivateKey>,
-}
-*/
-
 #[derive(Clone)]
 struct UbwSshAgent {
     session_bind: Option<Vec<u8>>,
-    cached_keys: HashMap<String, PrivateKey>,
+    cache: Arc<RwLock<HashMap<String, PrivateKey>>>,
 }
 
 impl UbwSshAgent {
-    pub fn new() -> Self {
-        let cached_keys = HashMap::new();
-
+    pub fn new(cache: Arc<RwLock<HashMap<String, PrivateKey>>>) -> Self {
         Self {
             session_bind: None,
-            cached_keys,
+            cache,
         }
     }
 
-    fn find_key_cache(&self, public_key: &str) -> Result<&PrivateKey> {
-        if let Some(keys) = self.cached_keys.get(public_key) {
-            return Ok(keys);
+    fn find_key_cache(&self, public_key: &str) -> Result<PrivateKey> {
+        let keys = self.cache.read().map_err(|e| anyhow!("Cache lock poisoned: {}", e))?;
+        if let Some(key) = keys.get(public_key) {
+            return Ok(key.clone());
         }
 
         bail!("{public_key} was not cached")
@@ -118,21 +112,22 @@ impl UbwSshAgent {
         bail!("private key not found");
     }
 
-    fn add_key(&mut self, public_key: &str, private_key: &PrivateKey) -> Result<()> {
+    fn add_key(&self, public_key: &str, private_key: &PrivateKey) -> Result<()> {
         info!("adding {public_key} to cache");
-        self.cached_keys.insert(public_key.to_string(), private_key.clone());
+        let mut keys = self.cache.write().map_err(|e| anyhow!("Cache lock poisoned: {}", e))?;
+        keys.insert(public_key.to_string(), private_key.clone());
         Ok(())
     }
 
-    pub async fn find_key(&mut self, public_key: &PublicKey) -> Result<PrivateKey> {
+    pub async fn find_key(&self, public_key: &PublicKey) -> Result<PrivateKey> {
         let pub_key_openssh = public_key.to_openssh()?;
 
         //
         // is it cached ?
         //
         if let Ok(key) = self.find_key_cache(&pub_key_openssh) {
-            info!("{:?} was cached", pub_key_openssh);
-            return Ok(key.clone());
+            info!("{pub_key_openssh} was cached");
+            return Ok(key);
         }
 
         info!("{pub_key_openssh} was not cached");
@@ -166,8 +161,6 @@ async fn get_remote_keys() -> Result<(BwCrypt, Vec<BwSshKey>)> {
 #[ssh_agent_lib::async_trait]
 impl Session for UbwSshAgent {
     async fn request_identities(&mut self) -> Result<Vec<Identity>, AgentError> {
-        warn!("request_identities called");
-
         let (crypt, ssh_keys) = match get_remote_keys().await {
             Ok(v) => v,
             Err(e) => {
@@ -229,8 +222,6 @@ impl Session for UbwSshAgent {
     }
 
     async fn sign(&mut self, request: SignRequest) -> Result<Signature, AgentError> {
-        warn!("sign request for pubkey fingerprint");
-
         // If session binding is set, we should validate it here
         // The session binding data would typically be used to ensure the signature
         // is only valid for the specific SSH session that was bound
@@ -287,8 +278,6 @@ impl Session for UbwSshAgent {
     }
 
     async fn extension(&mut self, extension: Extension) -> Result<Option<Extension>, AgentError> {
-        warn!("extension request: {}", extension.name);
-
         match extension.name.as_str() {
             // Handle the query extension - returns which extensions are supported
             "query" => {
@@ -311,7 +300,7 @@ impl Session for UbwSshAgent {
                 }
 
                 self.session_bind = Some(details_bytes.to_vec());
-                warn!("session-bind: stored session binding ({} bytes)", details_bytes.len());
+                info!("session-bind: stored session binding ({} bytes)", details_bytes.len());
 
                 // Return success with no response data
                 Ok(None)
@@ -326,11 +315,14 @@ impl Session for UbwSshAgent {
     }
 }
 
-pub struct SshAgentServer {}
+pub struct SshAgentServer {
+    cache: Arc<RwLock<HashMap<String, PrivateKey>>>,
+}
 
 impl SshAgentServer {
     pub fn new() -> Self {
-        Self {}
+        let cache = Arc::new(RwLock::new(HashMap::new()));
+        Self { cache }
     }
 
     pub async fn accept_loop(&self, mut quit_rx: Receiver<bool>) -> Result<()> {
@@ -352,7 +344,7 @@ impl SshAgentServer {
 
         let fd = UnixListener::bind(socket_path)?;
 
-        let agent = UbwSshAgent::new();
+        let agent = UbwSshAgent::new(self.cache.clone());
 
         select! {
             _ = quit_rx.changed() => Ok(()),
