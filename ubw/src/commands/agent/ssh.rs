@@ -47,7 +47,7 @@ impl UbwSshAgent {
     }
 
     fn find_key_cache(&self, public_key: &str) -> Result<PrivateKey> {
-        let keys = self.cache.read().map_err(|e| anyhow!("Cache lock poisoned: {}", e))?;
+        let keys = self.cache.read().map_err(|e| anyhow!("Cache lock poisoned: {e}"))?;
         if let Some(key) = keys.get(public_key) {
             return Ok(key.clone());
         }
@@ -66,12 +66,12 @@ impl UbwSshAgent {
                 Ok(decrypted) => match String::try_from(decrypted) {
                     Ok(s) => s,
                     Err(e) => {
-                        warn!("Failed to convert public key to string: {}", e);
+                        warn!("Failed to convert public key to string: {e}");
                         continue;
                     }
                 },
                 Err(e) => {
-                    warn!("Failed to decrypt public key: {}", e);
+                    warn!("Failed to decrypt public key: {e}");
                     continue;
                 }
             };
@@ -88,12 +88,12 @@ impl UbwSshAgent {
                 Ok(decrypted) => match String::try_from(decrypted) {
                     Ok(s) => s,
                     Err(e) => {
-                        warn!("Failed to convert public key to string: {}", e);
+                        warn!("Failed to convert public key to string: {e}");
                         continue;
                     }
                 },
                 Err(e) => {
-                    warn!("Failed to decrypt public key: {}", e);
+                    warn!("Failed to decrypt public key: {e}");
                     continue;
                 }
             };
@@ -114,7 +114,7 @@ impl UbwSshAgent {
 
     fn add_key(&self, public_key: &str, private_key: &PrivateKey) -> Result<()> {
         info!("adding {public_key} to cache");
-        let mut keys = self.cache.write().map_err(|e| anyhow!("Cache lock poisoned: {}", e))?;
+        let mut keys = self.cache.write().map_err(|e| anyhow!("Cache lock poisoned: {e}"))?;
         keys.insert(public_key.to_string(), private_key.clone());
         Ok(())
     }
@@ -248,33 +248,30 @@ impl Session for UbwSshAgent {
         // Sign the data using the private key
         // For SSH agent protocol, we need to create a raw cryptographic signature
         // not an SSH signature format (which includes namespace)
-        match private_key.key_data() {
-            KeypairData::Ed25519(ed25519_keypair) => {
-                // Convert to ed25519_dalek SigningKey
-                let signing_key: ed25519_dalek::SigningKey = ed25519_keypair
-                    .try_into()
-                    .map_err(|e| AgentError::other(SshAgentError(format!("Failed to convert Ed25519 key: {e}"))))?;
+        if let KeypairData::Ed25519(ed25519_keypair) = private_key.key_data() {
+            // Convert to ed25519_dalek SigningKey
+            let signing_key: ed25519_dalek::SigningKey = ed25519_keypair
+                .try_into()
+                .map_err(|e| AgentError::other(SshAgentError(format!("Failed to convert Ed25519 key: {e}"))))?;
 
-                // Sign the data directly
-                let sig: ed25519_dalek::Signature = signing_key.sign(&request.data);
+            // Sign the data directly
+            let sig: ed25519_dalek::Signature = signing_key.sign(&request.data);
 
-                // Create the SSH agent signature
-                let algorithm = Algorithm::new("ssh-ed25519")
-                    .map_err(|e| AgentError::other(SshAgentError(format!("Invalid algorithm: {e}"))))?;
+            // Create the SSH agent signature
+            let algorithm = Algorithm::new("ssh-ed25519")
+                .map_err(|e| AgentError::other(SshAgentError(format!("Invalid algorithm: {e}"))))?;
 
-                let signature = Signature::new(algorithm, sig.to_bytes().to_vec())
-                    .map_err(|e| AgentError::other(SshAgentError(format!("Failed to create signature: {e}"))))?;
+            let signature = Signature::new(algorithm, sig.to_bytes().to_vec())
+                .map_err(|e| AgentError::other(SshAgentError(format!("Failed to create signature: {e}"))))?;
 
-                info!("Successfully signed data with Ed25519 key");
-                return Ok(signature);
-            }
-            _ => {
-                error!("Unsupported key type for signing");
-                return Err(AgentError::other(SshAgentError(
-                    "Only Ed25519 keys are currently supported".to_string(),
-                )));
-            }
+            info!("Successfully signed data with Ed25519 key");
+            return Ok(signature);
         }
+
+        error!("Unsupported key type for signing");
+        return Err(AgentError::other(SshAgentError(
+            "Only Ed25519 keys are currently supported".to_string(),
+        )));
     }
 
     async fn extension(&mut self, extension: Extension) -> Result<Option<Extension>, AgentError> {
