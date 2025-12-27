@@ -3,6 +3,7 @@ use std::sync::{Arc, RwLock};
 
 use anyhow::{Result, anyhow, bail};
 use signature::Signer;
+use ssh_agent_lib::ssh_key::public::KeyData;
 use ssh_agent_lib::{
     agent::{Session, listen},
     error::AgentError,
@@ -21,24 +22,13 @@ use super::utils::load_session;
 const DATA_DIR: &str = env!("CARGO_PKG_NAME");
 const SOCK_PREFIX: &str = env!("CARGO_PKG_NAME");
 
-#[derive(Debug)]
-struct SshAgentError(String);
-
-impl std::fmt::Display for SshAgentError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::error::Error for SshAgentError {}
-
 #[derive(Clone)]
-struct UbwSshAgent {
+struct BwSshAgent {
     session_bind: Option<Vec<u8>>,
     cache: Arc<RwLock<HashMap<String, PrivateKey>>>,
 }
 
-impl UbwSshAgent {
+impl BwSshAgent {
     pub fn new(cache: Arc<RwLock<HashMap<String, PrivateKey>>>) -> Self {
         Self {
             session_bind: None,
@@ -119,6 +109,9 @@ impl UbwSshAgent {
         Ok(())
     }
 
+    ////////////////////////////////////////////////////////////////////////////
+    // PUBLIC
+    ////////////////////////////////////////////////////////////////////////////
     pub async fn find_key(&self, public_key: &PublicKey) -> Result<PrivateKey> {
         let pub_key_openssh = public_key.to_openssh()?;
 
@@ -159,7 +152,7 @@ async fn get_remote_keys() -> Result<(BwCrypt, Vec<BwSshKey>)> {
 }
 
 #[ssh_agent_lib::async_trait]
-impl Session for UbwSshAgent {
+impl Session for BwSshAgent {
     async fn request_identities(&mut self) -> Result<Vec<Identity>, AgentError> {
         let (crypt, ssh_keys) = match get_remote_keys().await {
             Ok(v) => v,
@@ -169,11 +162,10 @@ impl Session for UbwSshAgent {
             }
         };
 
-        // Filter for SSH key ciphers and convert to identities
         let mut identities = Vec::new();
 
         for ssh_key in ssh_keys {
-            // Decrypt the cipher name to use as comment
+            // Decrypt the fingerprint to use as comment
             let comment = match crypt.decrypt(&ssh_key.key_fingerprint) {
                 Ok(decrypted) => match String::try_from(decrypted) {
                     Ok(s) => s,
@@ -233,15 +225,14 @@ impl Session for UbwSshAgent {
         }
 
         // Convert request pubkey to PublicKey for comparison
-        let request_pubkey: PublicKey = request.pubkey.try_into().map_err(AgentError::other)?;
+        let request_pubkey: PublicKey = <KeyData as Into<PublicKey>>::into(request.pubkey);
 
+        // this'll lookup the cache first and fallback on asking the server
         let private_key = match self.find_key(&request_pubkey).await {
             Ok(v) => v,
             Err(e) => {
                 error!("Unable to get keys from remote server ({e})");
-                return Err(AgentError::other(SshAgentError(
-                    "No matching private key found".to_string(),
-                )));
+                return Err(AgentError::Other("No matching private key found".into()));
             }
         };
 
@@ -252,26 +243,23 @@ impl Session for UbwSshAgent {
             // Convert to ed25519_dalek SigningKey
             let signing_key: ed25519_dalek::SigningKey = ed25519_keypair
                 .try_into()
-                .map_err(|e| AgentError::other(SshAgentError(format!("Failed to convert Ed25519 key: {e}"))))?;
+                .map_err(|e| AgentError::Other(format!("Failed to convert Ed25519 key: {e}").into()))?;
 
             // Sign the data directly
             let sig: ed25519_dalek::Signature = signing_key.sign(&request.data);
 
             // Create the SSH agent signature
             let algorithm = Algorithm::new("ssh-ed25519")
-                .map_err(|e| AgentError::other(SshAgentError(format!("Invalid algorithm: {e}"))))?;
+                .map_err(|e| AgentError::Other(format!("Invalid algorithm: {e}").into()))?;
 
             let signature = Signature::new(algorithm, sig.to_bytes().to_vec())
-                .map_err(|e| AgentError::other(SshAgentError(format!("Failed to create signature: {e}"))))?;
+                .map_err(|e| AgentError::Other(format!("Failed to create signature: {e}").into()))?;
 
             info!("Successfully signed data with Ed25519 key");
             return Ok(signature);
         }
 
-        error!("Unsupported key type for signing");
-        return Err(AgentError::other(SshAgentError(
-            "Only Ed25519 keys are currently supported".to_string(),
-        )));
+        Err(AgentError::Other("Only Ed25519 keys are currently supported".into()))
     }
 
     async fn extension(&mut self, extension: Extension) -> Result<Option<Extension>, AgentError> {
@@ -341,7 +329,7 @@ impl SshAgentServer {
 
         let fd = UnixListener::bind(socket_path)?;
 
-        let agent = UbwSshAgent::new(self.cache.clone());
+        let agent = BwSshAgent::new(self.cache.clone());
 
         select! {
             _ = quit_rx.changed() => Ok(()),
