@@ -43,7 +43,6 @@ async fn cache_server() -> Result<()> {
             }
             _ = sigint.recv() => {
                 info!("ignoring SIGINT");
-                quit_tx.send(true)?;
             }
             _ = sigterm.recv() => {
                 info!("received SIGTERM. we're leaving");
