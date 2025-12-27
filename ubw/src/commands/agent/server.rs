@@ -21,13 +21,9 @@ pub struct AgentArgs {
     /// server url
     #[arg(short, long)]
     pub stop: bool,
-
-    /// daemonize
-    #[arg(short, long)]
-    pub daemonize: bool,
 }
 
-async fn cache_server(_daemonize: bool) -> Result<()> {
+async fn cache_server() -> Result<()> {
     let mut creds_server = CacheServer::new()?;
     let ssh_server = SshAgentServer::new();
 
@@ -46,7 +42,7 @@ async fn cache_server(_daemonize: bool) -> Result<()> {
                 info!("ignoring SIGHUP");
             }
             _ = sigint.recv() => {
-                info!("received SIGINT. we're leaving");
+                info!("ignoring SIGINT");
                 quit_tx.send(true)?;
             }
             _ = sigterm.recv() => {
@@ -98,7 +94,6 @@ pub async fn spawn_server() -> Result<()> {
 
     Command::new(self_exe)
         .arg("agent")
-        .arg("--daemonize")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -148,7 +143,7 @@ pub async fn command_agent(args: AgentArgs) -> Result<()> {
             //
             // this blocks!
             //
-            cache_server(args.daemonize).await?;
+            cache_server().await?;
             Ok(())
         }
         (false, true) => {

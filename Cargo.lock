@@ -501,15 +501,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daemonize"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab8bfdaacb3c887a54d41bdf48d3af8873b3f5566469f8ba21b92057509f116e"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2614,7 +2605,7 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "ubitwarden"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "bitwarden-crypto",
  "derive_more",
@@ -2630,11 +2621,10 @@ dependencies = [
 
 [[package]]
 name = "ubw"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "clap",
- "daemonize",
  "dialoguer",
  "dirs",
  "ed25519-dalek",
