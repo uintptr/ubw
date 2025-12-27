@@ -75,13 +75,13 @@ where
 // PUBLIC
 ////////////////////////////////////////////////////////////////////////////////
 
-pub async fn ping_cache() -> Result<()> {
+pub async fn ping_agent() -> Result<()> {
     let socket_name = create_socket_name();
     let mut stream = UnixStream::connect(socket_name).await?;
     write_string(&mut stream, "ping").await
 }
 
-pub async fn stop_cache() -> Result<()> {
+pub async fn stop_agent() -> Result<()> {
     let socket_name = create_socket_name();
     let mut stream = UnixStream::connect(socket_name).await?;
     write_string(&mut stream, "stop").await

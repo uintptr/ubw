@@ -11,7 +11,7 @@ use tokio::{
     time::sleep,
 };
 
-use crate::commands::agent::utils::{ping_cache, stop_cache};
+use crate::commands::agent::utils::{ping_agent, stop_agent};
 use crate::commands::agent::{credentials::CacheServer, ssh::SshAgentServer};
 
 const SPAWN_WAIT_TIMEOUT: usize = 5;
@@ -112,7 +112,7 @@ pub async fn spawn_server() -> Result<()> {
     // wait until we can ping it
     //
     for i in 0..SPAWN_WAIT_TIMEOUT {
-        if ping_cache().await.is_ok() {
+        if ping_agent().await.is_ok() {
             return Ok(());
         }
 
@@ -124,16 +124,16 @@ pub async fn spawn_server() -> Result<()> {
 }
 
 pub async fn command_agent(args: AgentArgs) -> Result<()> {
-    let running = ping_cache().await.is_ok();
+    let running = ping_agent().await.is_ok();
 
     match (args.stop, running) {
         (true, true) => {
             warn!("stopping the server");
-            stop_cache().await?;
+            stop_agent().await?;
 
             // Wait until ping fails
             for _ in 0..5 {
-                if ping_cache().await.is_err() {
+                if ping_agent().await.is_err() {
                     info!("server stopped");
                     return Ok(());
                 }

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::agent::{
     server::spawn_server,
-    utils::{fetch_credentials, ping_cache, store_credentials},
+    utils::{fetch_credentials, ping_agent, store_credentials},
 };
 
 const LOGIN_FILE_NAME: &str = "login.json";
@@ -89,7 +89,7 @@ impl LoginConfigData {
 }
 
 pub async fn command_login(args: LoginArgs) -> Result<()> {
-    if let Err(e) = ping_cache().await {
+    if let Err(e) = ping_agent().await {
         warn!("{e}");
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;
@@ -131,7 +131,7 @@ pub async fn command_login(args: LoginArgs) -> Result<()> {
 }
 
 pub async fn login_from_cache() -> Result<()> {
-    if let Err(e) = ping_cache().await {
+    if let Err(e) = ping_agent().await {
         error!("{e}");
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;
