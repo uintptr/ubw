@@ -9,6 +9,7 @@ use ubw::commands::{
     ciphers::{command_cipher, command_ciphers},
     login::{LoginArgs, command_login},
     password::command_password,
+    ssh::command_ssh_keys,
     totp::command_totp,
 };
 
@@ -33,6 +34,8 @@ pub enum Commands {
     Totp(IdArgs),
     /// Pull the password for the specified id
     Password(IdArgs),
+    /// List SSH keys
+    SshKeys,
 }
 
 #[derive(Parser)]
@@ -66,6 +69,7 @@ async fn main() -> Result<()> {
         Commands::Cipher(cipher) => command_cipher(cipher.id).await?,
         Commands::Totp(totp) => command_totp(totp.id).await?,
         Commands::Password(pass) => command_password(pass.id).await?,
+        Commands::SshKeys => command_ssh_keys().await?,
     }
 
     Ok(())

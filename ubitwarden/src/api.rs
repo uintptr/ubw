@@ -233,6 +233,29 @@ impl BwApi {
         Ok(ciphers)
     }
 
+    pub async fn ssh_keys(&self, auth: &BwAuth) -> Result<Vec<BwSshKey>> {
+        let mut keys = vec![];
+
+        let url = format!("{}/api/ciphers?type=5", self.server);
+
+        let resp = self
+            .client
+            .get(url)
+            .bearer_auth(&auth.access_token)
+            .send()
+            .await?
+            .json::<BwCipherResponse>()
+            .await?;
+
+        for c in resp.data {
+            if let Some(ssh) = c.ssh_key {
+                keys.push(ssh);
+            }
+        }
+
+        Ok(keys)
+    }
+
     pub async fn totp<I>(&self, auth: &BwAuth, id: I) -> Result<String>
     where
         I: AsRef<str>,

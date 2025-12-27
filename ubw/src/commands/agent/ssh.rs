@@ -1,4 +1,6 @@
-use anyhow::{Result, anyhow};
+use std::collections::HashMap;
+
+use anyhow::{Result, anyhow, bail};
 use signature::Signer;
 use ssh_agent_lib::{
     agent::{Session, listen},
@@ -8,7 +10,7 @@ use ssh_agent_lib::{
 };
 use tokio::{fs, net::UnixListener, select, sync::watch::Receiver};
 use ubitwarden::{
-    api::{BwApi, BwCipherType},
+    api::{BwApi, BwSshKey},
     crypto::BwCrypt,
 };
 
@@ -29,9 +31,136 @@ impl std::fmt::Display for SshAgentError {
 
 impl std::error::Error for SshAgentError {}
 
+/*
+struct UbwSshAgentCache {
+    keys: HashMap<String, PrivateKey>,
+}
+*/
+
 #[derive(Clone)]
 struct UbwSshAgent {
     session_bind: Option<Vec<u8>>,
+    cached_keys: HashMap<String, PrivateKey>,
+}
+
+impl UbwSshAgent {
+    pub fn new() -> Self {
+        let cached_keys = HashMap::new();
+
+        Self {
+            session_bind: None,
+            cached_keys,
+        }
+    }
+
+    fn find_key_cache(&self, public_key: &str) -> Result<&PrivateKey> {
+        if let Some(keys) = self.cached_keys.get(public_key) {
+            return Ok(keys);
+        }
+
+        bail!("{public_key} was not cached")
+    }
+
+    async fn find_key_remote(&self, public_key: &str) -> Result<PrivateKey> {
+        //
+        // Get keys from the server and find it
+        //
+        let (crypt, ssh_keys) = get_remote_keys().await?;
+
+        for ssh_key in ssh_keys {
+            let cur_pub_b64 = match crypt.decrypt(&ssh_key.public_key) {
+                Ok(decrypted) => match String::try_from(decrypted) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        warn!("Failed to convert public key to string: {}", e);
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    warn!("Failed to decrypt public key: {}", e);
+                    continue;
+                }
+            };
+
+            if cur_pub_b64 != public_key {
+                continue;
+            }
+
+            //
+            // Ok we have the key
+            //
+
+            let cur_pri_b64 = match crypt.decrypt(&ssh_key.private_key) {
+                Ok(decrypted) => match String::try_from(decrypted) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        warn!("Failed to convert public key to string: {}", e);
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    warn!("Failed to decrypt public key: {}", e);
+                    continue;
+                }
+            };
+
+            let cur_pri = match PrivateKey::from_openssh(cur_pri_b64) {
+                Ok(v) => v,
+                Err(e) => {
+                    error!("{e}");
+                    continue;
+                }
+            };
+
+            return Ok(cur_pri);
+        }
+
+        bail!("private key not found");
+    }
+
+    fn add_key(&mut self, public_key: &str, private_key: &PrivateKey) -> Result<()> {
+        info!("adding {public_key} to cache");
+        self.cached_keys.insert(public_key.to_string(), private_key.clone());
+        Ok(())
+    }
+
+    pub async fn find_key(&mut self, public_key: &PublicKey) -> Result<PrivateKey> {
+        let pub_key_openssh = public_key.to_openssh()?;
+
+        //
+        // is it cached ?
+        //
+        if let Ok(key) = self.find_key_cache(&pub_key_openssh) {
+            info!("{:?} was cached", pub_key_openssh);
+            return Ok(key.clone());
+        }
+
+        info!("{pub_key_openssh} was not cached");
+
+        if let Ok(key) = self.find_key_remote(&pub_key_openssh).await {
+            //
+            // add it to the cache for the next time around
+            //
+            self.add_key(&pub_key_openssh, &key)?;
+            return Ok(key);
+        }
+
+        bail!("Key Not found");
+    }
+}
+
+async fn get_remote_keys() -> Result<(BwCrypt, Vec<BwSshKey>)> {
+    // Load session and fetch ciphers from Bitwarden
+    let session = load_session().await?;
+
+    let crypt = BwCrypt::from_encoded_key(&session.key)?;
+
+    // Create API client and fetch all ciphers
+    let api = BwApi::new(&session.email, &session.server_url)?;
+
+    let ssh_keys = api.ssh_keys(&session.auth).await?;
+
+    Ok((crypt, ssh_keys))
 }
 
 #[ssh_agent_lib::async_trait]
@@ -39,36 +168,10 @@ impl Session for UbwSshAgent {
     async fn request_identities(&mut self) -> Result<Vec<Identity>, AgentError> {
         warn!("request_identities called");
 
-        // Load session and fetch ciphers from Bitwarden
-        let session = match load_session().await {
-            Ok(s) => s,
+        let (crypt, ssh_keys) = match get_remote_keys().await {
+            Ok(v) => v,
             Err(e) => {
-                error!("Failed to load session: {}", e);
-                return Ok(vec![]);
-            }
-        };
-
-        let crypt = match BwCrypt::from_encoded_key(&session.key) {
-            Ok(c) => c,
-            Err(e) => {
-                error!("Failed to create crypto: {}", e);
-                return Ok(vec![]);
-            }
-        };
-
-        // Create API client and fetch all ciphers
-        let api = match BwApi::new(&session.email, &session.server_url) {
-            Ok(a) => a,
-            Err(e) => {
-                error!("Failed to create API client: {}", e);
-                return Ok(vec![]);
-            }
-        };
-
-        let ciphers = match api.ciphers(&session.auth).await {
-            Ok(c) => c,
-            Err(e) => {
-                error!("Failed to fetch ciphers: {}", e);
+                error!("Unable to get keys from remote server ({e})");
                 return Ok(vec![]);
             }
         };
@@ -76,53 +179,41 @@ impl Session for UbwSshAgent {
         // Filter for SSH key ciphers and convert to identities
         let mut identities = Vec::new();
 
-        for cipher in ciphers {
-            if !matches!(cipher.cipher_type, BwCipherType::Ssh) {
-                continue;
-            }
-
+        for ssh_key in ssh_keys {
             // Decrypt the cipher name to use as comment
-            let comment = match crypt.decrypt(&cipher.name) {
+            let comment = match crypt.decrypt(&ssh_key.key_fingerprint) {
                 Ok(decrypted) => match String::try_from(decrypted) {
                     Ok(s) => s,
                     Err(e) => {
-                        warn!("Failed to convert cipher name to string: {}", e);
+                        warn!("Failed to convert cipher name to string: {e}");
                         continue;
                     }
                 },
                 Err(e) => {
-                    warn!("Failed to decrypt cipher name: {}", e);
+                    warn!("Failed to decrypt cipher name: {e}");
                     continue;
                 }
             };
 
-            // Get the public key from cipher data
-            // Assuming the public key is stored in cipher.data.username or cipher.data.password
-
-            let public_key_str = if let Some(ssh) = &cipher.ssh_key {
-                match crypt.decrypt(&ssh.public_key) {
-                    Ok(decrypted) => match String::try_from(decrypted) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            warn!("Failed to convert public key to string: {}", e);
-                            continue;
-                        }
-                    },
+            let public_key_b64 = match crypt.decrypt(&ssh_key.public_key) {
+                Ok(decrypted) => match String::try_from(decrypted) {
+                    Ok(s) => s,
                     Err(e) => {
-                        warn!("Failed to decrypt public key: {}", e);
+                        warn!("Failed to convert cipher name to string: {e}");
                         continue;
                     }
+                },
+                Err(e) => {
+                    warn!("Failed to decrypt cipher name: {e}");
+                    continue;
                 }
-            } else {
-                warn!("No public key found for cipher: {}", comment);
-                continue;
             };
 
             // Parse the public key
-            let public_key = match PublicKey::from_openssh(&public_key_str) {
+            let public_key = match PublicKey::from_openssh(&public_key_b64) {
                 Ok(pk) => pk,
                 Err(e) => {
-                    warn!("Failed to parse public key for '{}': {}", comment, e);
+                    warn!("Failed to parse public key for '{comment}': {e}");
                     continue;
                 }
             };
@@ -150,164 +241,49 @@ impl Session for UbwSshAgent {
             // This is typically done by the SSH server, but the agent can log it.
         }
 
-        // Load session and fetch ciphers from Bitwarden
-        let session = match load_session().await {
-            Ok(s) => s,
-            Err(e) => {
-                error!("Failed to load session: {}", e);
-                return Err(AgentError::other(SshAgentError(format!(
-                    "Failed to load session: {}",
-                    e
-                ))));
-            }
-        };
-
-        let crypt = match BwCrypt::from_encoded_key(&session.key) {
-            Ok(c) => c,
-            Err(e) => {
-                error!("Failed to create crypto: {}", e);
-                return Err(AgentError::other(SshAgentError(format!(
-                    "Failed to create crypto: {}",
-                    e
-                ))));
-            }
-        };
-
-        // Create API client and fetch all ciphers
-        let api = match BwApi::new(&session.email, &session.server_url) {
-            Ok(a) => a,
-            Err(e) => {
-                error!("Failed to create API client: {}", e);
-                return Err(AgentError::other(SshAgentError(format!(
-                    "Failed to create API client: {}",
-                    e
-                ))));
-            }
-        };
-
-        let ciphers = match api.ciphers(&session.auth).await {
-            Ok(c) => c,
-            Err(e) => {
-                error!("Failed to fetch ciphers: {}", e);
-                return Err(AgentError::other(SshAgentError(format!(
-                    "Failed to fetch ciphers: {}",
-                    e
-                ))));
-            }
-        };
-
         // Convert request pubkey to PublicKey for comparison
         let request_pubkey: PublicKey = request.pubkey.try_into().map_err(AgentError::other)?;
 
-        // Find the cipher with matching public key
-        for cipher in ciphers {
-            if !matches!(cipher.cipher_type, BwCipherType::Ssh) {
-                continue;
+        let private_key = match self.find_key(&request_pubkey).await {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Unable to get keys from remote server ({e})");
+                return Err(AgentError::other(SshAgentError(
+                    "No matching private key found".to_string(),
+                )));
             }
+        };
 
-            let ssh_key = match &cipher.ssh_key {
-                Some(sk) => sk,
-                None => continue,
-            };
+        // Sign the data using the private key
+        // For SSH agent protocol, we need to create a raw cryptographic signature
+        // not an SSH signature format (which includes namespace)
+        match private_key.key_data() {
+            KeypairData::Ed25519(ed25519_keypair) => {
+                // Convert to ed25519_dalek SigningKey
+                let signing_key: ed25519_dalek::SigningKey = ed25519_keypair
+                    .try_into()
+                    .map_err(|e| AgentError::other(SshAgentError(format!("Failed to convert Ed25519 key: {e}"))))?;
 
-            // Decrypt and parse the public key to compare
-            let public_key_str = match crypt.decrypt(&ssh_key.public_key) {
-                Ok(decrypted) => match String::try_from(decrypted) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        warn!("Failed to convert public key to string: {}", e);
-                        continue;
-                    }
-                },
-                Err(e) => {
-                    warn!("Failed to decrypt public key: {}", e);
-                    continue;
-                }
-            };
+                // Sign the data directly
+                let sig: ed25519_dalek::Signature = signing_key.sign(&request.data);
 
-            let public_key = match PublicKey::from_openssh(&public_key_str) {
-                Ok(pk) => pk,
-                Err(e) => {
-                    warn!("Failed to parse public key: {}", e);
-                    continue;
-                }
-            };
+                // Create the SSH agent signature
+                let algorithm = Algorithm::new("ssh-ed25519")
+                    .map_err(|e| AgentError::other(SshAgentError(format!("Invalid algorithm: {e}"))))?;
 
-            // Check if this is the key we're looking for
-            if public_key.fingerprint(Default::default()) != request_pubkey.fingerprint(Default::default()) {
-                warn!("this is not the key you're looking for");
-                continue;
+                let signature = Signature::new(algorithm, sig.to_bytes().to_vec())
+                    .map_err(|e| AgentError::other(SshAgentError(format!("Failed to create signature: {e}"))))?;
+
+                info!("Successfully signed data with Ed25519 key");
+                return Ok(signature);
             }
-
-            // Found the matching key, now decrypt the private key
-            let private_key_str = match crypt.decrypt(&ssh_key.private_key) {
-                Ok(decrypted) => match String::try_from(decrypted) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        error!("Failed to convert private key to string: {}", e);
-                        return Err(AgentError::other(SshAgentError(format!(
-                            "Failed to convert private key: {}",
-                            e
-                        ))));
-                    }
-                },
-                Err(e) => {
-                    error!("Failed to decrypt private key: {}", e);
-                    return Err(AgentError::other(SshAgentError(format!(
-                        "Failed to decrypt private key: {}",
-                        e
-                    ))));
-                }
-            };
-
-            // Parse the private key
-            let private_key = match PrivateKey::from_openssh(&private_key_str) {
-                Ok(pk) => pk,
-                Err(e) => {
-                    error!("Failed to parse private key: {}", e);
-                    return Err(AgentError::other(SshAgentError(format!(
-                        "Failed to parse private key: {}",
-                        e
-                    ))));
-                }
-            };
-
-            // Sign the data using the private key
-            // For SSH agent protocol, we need to create a raw cryptographic signature
-            // not an SSH signature format (which includes namespace)
-            match private_key.key_data() {
-                KeypairData::Ed25519(ed25519_keypair) => {
-                    // Convert to ed25519_dalek SigningKey
-                    let signing_key: ed25519_dalek::SigningKey = ed25519_keypair.try_into().map_err(|e| {
-                        AgentError::other(SshAgentError(format!("Failed to convert Ed25519 key: {}", e)))
-                    })?;
-
-                    // Sign the data directly
-                    let sig: ed25519_dalek::Signature = signing_key.sign(&request.data);
-
-                    // Create the SSH agent signature
-                    let algorithm = Algorithm::new("ssh-ed25519")
-                        .map_err(|e| AgentError::other(SshAgentError(format!("Invalid algorithm: {}", e))))?;
-
-                    let signature = Signature::new(algorithm, sig.to_bytes().to_vec())
-                        .map_err(|e| AgentError::other(SshAgentError(format!("Failed to create signature: {}", e))))?;
-
-                    info!("Successfully signed data with Ed25519 key");
-                    return Ok(signature);
-                }
-                _ => {
-                    error!("Unsupported key type for signing");
-                    return Err(AgentError::other(SshAgentError(
-                        "Only Ed25519 keys are currently supported".to_string(),
-                    )));
-                }
+            _ => {
+                error!("Unsupported key type for signing");
+                return Err(AgentError::other(SshAgentError(
+                    "Only Ed25519 keys are currently supported".to_string(),
+                )));
             }
         }
-
-        error!("No matching private key found for the requested public key");
-        Err(AgentError::other(SshAgentError(
-            "No matching private key found".to_string(),
-        )))
     }
 
     async fn extension(&mut self, extension: Extension) -> Result<Option<Extension>, AgentError> {
@@ -357,7 +333,7 @@ impl SshAgentServer {
         Self {}
     }
 
-    pub async fn accept_loop(&mut self, mut quit_rx: Receiver<bool>) -> Result<()> {
+    pub async fn accept_loop(&self, mut quit_rx: Receiver<bool>) -> Result<()> {
         let data_dir = dirs::data_dir().ok_or(anyhow!("unable to find data-dir"))?;
         let data_dir = data_dir.join(DATA_DIR);
 
@@ -376,7 +352,7 @@ impl SshAgentServer {
 
         let fd = UnixListener::bind(socket_path)?;
 
-        let agent = UbwSshAgent { session_bind: None };
+        let agent = UbwSshAgent::new();
 
         select! {
             _ = quit_rx.changed() => Ok(()),

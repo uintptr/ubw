@@ -29,7 +29,7 @@ pub struct AgentArgs {
 
 async fn cache_server(_daemonize: bool) -> Result<()> {
     let mut creds_server = CacheServer::new()?;
-    let mut ssh_server = SshAgentServer::new();
+    let ssh_server = SshAgentServer::new();
 
     let (quit_tx, quit_rx) = watch::channel(false);
 
