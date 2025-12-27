@@ -93,11 +93,44 @@ impl BwCrypt {
         let totp_string: String = self.decrypt(encrypted_totp)?.try_into()?;
 
         if totp_string.starts_with("otpauth://") {
+            // Try parsing with validation first
             let totp = match TOTP::from_url(&totp_string) {
                 Ok(v) => v,
                 Err(e) => {
-                    error!("Unable to parse {totp_string} {e}");
-                    return Err(e.into());
+                    // If from_url fails, try the unchecked variant
+                    info!("from_url failed ({e}), attempting from_url_unchecked");
+
+                    match TOTP::from_url_unchecked(&totp_string) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            // If unchecked also fails (e.g., invalid base32 with lowercase),
+                            // try normalizing the URL by uppercasing the secret parameter
+                            info!("from_url_unchecked failed ({e}), attempting to normalize secret to uppercase");
+
+                            // Parse URL and uppercase the secret parameter
+                            let normalized = if let Some(secret_start) = totp_string.find("secret=") {
+                                let before_secret = &totp_string[..secret_start + 7]; // "secret="
+                                let after_secret = &totp_string[secret_start + 7..];
+
+                                // Find the end of the secret (next & or end of string)
+                                let secret_end = after_secret.find('&').unwrap_or(after_secret.len());
+                                let secret = &after_secret[..secret_end];
+                                let rest = &after_secret[secret_end..];
+
+                                format!("{}{}{}", before_secret, secret.to_uppercase(), rest)
+                            } else {
+                                totp_string.clone()
+                            };
+
+                            match TOTP::from_url_unchecked(&normalized) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    error!("unable to parse {totp_string} ({e})");
+                                    return Err(e.into());
+                                }
+                            }
+                        }
+                    }
                 }
             };
             let otp = totp.generate_current()?;
@@ -105,12 +138,13 @@ impl BwCrypt {
         } else {
             let secret = Secret::Encoded(totp_string.clone()).to_bytes()?;
 
+            // Try with validation first
             let ret = TOTP::new(
                 Algorithm::SHA1,
                 6,
                 1,
                 30,
-                secret,
+                secret.clone(),
                 Some("example".to_string()),
                 "test@example.com".to_string(),
             );
@@ -121,8 +155,20 @@ impl BwCrypt {
                     Ok(otp)
                 }
                 Err(e) => {
-                    error!("Unable to parse ({e})");
-                    Err(e.into())
+                    // If validation fails (likely due to short secret < 128 bits),
+                    // use the unchecked variant
+                    info!("TOTP::new failed ({e}), attempting new_unchecked for short secret");
+                    let totp = TOTP::new_unchecked(
+                        Algorithm::SHA1,
+                        6,
+                        1,
+                        30,
+                        secret,
+                        Some("example".to_string()),
+                        "test@example.com".to_string(),
+                    );
+                    let otp = totp.generate_current()?;
+                    Ok(otp)
                 }
             }
         }

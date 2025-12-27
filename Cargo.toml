@@ -3,7 +3,7 @@ resolver = "2"
 members = ["ubitwarden", "ubw"]
 
 [workspace.package]
-version = "0.0.12"
+version = "0.0.13"
 edition = "2024"
 
 [workspace.dependencies]
