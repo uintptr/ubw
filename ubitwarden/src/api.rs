@@ -193,7 +193,7 @@ impl BwApi {
             .json::<serde_json::Value>()
             .await?;
 
-        dbg!(&cipher_dict);
+        //dbg!(&cipher_dict);
 
         let cipher: BwCipher = serde_json::from_value(cipher_dict)?;
 
