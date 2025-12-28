@@ -1,4 +1,6 @@
-# Unofficial Bitwarden CLI
+# Use
+
+This is meant to be use with https://github.com/uintptr/pico_ducky
 
 # APIs
 
