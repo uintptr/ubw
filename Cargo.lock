@@ -3045,7 +3045,7 @@ checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
 name = "ubitwarden"
-version = "0.0.19"
+version = "0.0.20"
 dependencies = [
  "bitwarden-crypto",
  "bitwarden-encoding",
@@ -3064,7 +3064,7 @@ dependencies = [
 
 [[package]]
 name = "ubw"
-version = "0.0.19"
+version = "0.0.20"
 dependencies = [
  "anyhow",
  "clap",

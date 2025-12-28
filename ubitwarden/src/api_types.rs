@@ -131,14 +131,14 @@ where
 
     let cipher_type = if value.get("totp").is_some() {
         BwCipherType::Login
+    } else if value.get("keyFingerprint").is_some() {
+        BwCipherType::Ssh
     } else if value.get("notes").is_some() {
         BwCipherType::Note
     } else if value.get("cardholderName").is_some() {
         BwCipherType::Card
     } else if value.get("passportNumber").is_some() {
         BwCipherType::Identity
-    } else if value.get("keyFingerprint").is_some() {
-        BwCipherType::Ssh
     } else {
         return Err(serde::de::Error::custom("Unsupported data type"));
     };
