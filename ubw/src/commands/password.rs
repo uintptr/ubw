@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use tokio::io::{AsyncWriteExt, stdout};
-use ubitwarden::{api::BwApi, crypto::BwCrypt, error::Error};
+use ubitwarden::{api::BwApi, api_types::BwCipherData, crypto::BwCrypt, error::Error};
 
 use crate::commands::{agent::utils::load_session, login::login_from_cache};
 
@@ -20,7 +20,7 @@ where
 
     let cipher = api.cipher(&session.auth, id.as_ref()).await?;
 
-    if let Some(login) = cipher.login {
+    if let BwCipherData::Login(login) = cipher.data {
         if let Some(encrypted_password) = login.password {
             let pass: String = crypt.decrypt(&encrypted_password)?.try_into()?;
             // can't safely use the println! macro

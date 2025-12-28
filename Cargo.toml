@@ -3,7 +3,7 @@ resolver = "2"
 members = ["ubitwarden", "ubw"]
 
 [workspace.package]
-version = "0.0.18"
+version = "0.0.19"
 edition = "2024"
 
 [workspace.dependencies]
@@ -20,6 +20,7 @@ figlet-rs = "0.1"
 libc = "0.2"
 log = "0.4"
 nix = { version = "0.30", features = ["user"] }
+num_enum = "0.7"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "rustls-tls"

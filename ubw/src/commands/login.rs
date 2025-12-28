@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow, bail};
 use dialoguer::Password;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use ubitwarden::{api::BwApi, crypto::BwCrypt};
+use ubitwarden::{api::BwApi, api_types::BwCipherData, crypto::BwCrypt};
 
 use crate::{
     banner::display_banner,
@@ -180,12 +180,14 @@ pub async fn command_logins() -> Result<()> {
 
     let api = BwApi::new(&session.email, &session.server_url)?;
 
-    let logins = api.logins(&session.auth).await?;
+    let ciphers = api.logins(&session.auth).await?;
 
-    for login in logins {
-        if let Some(encrypted_username) = login.username {
+    for c in ciphers {
+        if let BwCipherData::Login(login) = c.data
+            && let Some(encrypted_username) = login.username
+        {
             let name: String = crypt.decrypt(&encrypted_username)?.try_into()?;
-            println!("* {name}");
+            println!("* {} {name}", c.id);
         }
     }
 

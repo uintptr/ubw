@@ -1,7 +1,8 @@
 use anyhow::{Result, bail};
 use tabled::{Table, Tabled, settings::Style};
 use ubitwarden::{
-    api::{BwApi, BwCipher},
+    api::BwApi,
+    api_types::{BwCipher, BwCipherData},
     crypto::BwCrypt,
     error::Error,
 };
@@ -17,7 +18,7 @@ struct CipherTable<'a> {
 }
 
 fn get_totp(crypt: &BwCrypt, cipher: &BwCipher) -> Result<String> {
-    if let Some(login) = &cipher.login
+    if let BwCipherData::Login(login) = &cipher.data
         && let Some(totp) = &login.totp
     {
         let totp_string = crypt.parse_totp(totp)?;

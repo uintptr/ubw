@@ -42,6 +42,8 @@ pub enum Error {
     EndOfFile,
     #[error("Authentication Failure")]
     AuthFailure,
+    #[error("Unknown type={0}")]
+    UnknownTypeInt(u64),
 
     //
     // 2d party

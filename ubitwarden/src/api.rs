@@ -1,108 +1,27 @@
 use std::collections::HashMap;
 
-use derive_more::Display;
 use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_repr::Deserialize_repr;
 
 use crate::{
+    api_types::{BwAuth, BwCipher, BwCipherData, BwCipherType, BwPreLogin, BwSync},
     crypto::build_password_hash,
     error::{Error, Result},
 };
 
 const UBW_DEVICE_ID: &str = "2c28ca63-da34-452d-9d54-3180c2d1165e";
 
-#[derive(Debug, Deserialize)]
-pub struct BwCipherData {
-    pub name: String,
-    pub password: Option<String>,
-    pub username: Option<String>,
-}
-
-#[derive(Display, Debug, Deserialize_repr)]
-#[repr(u8)]
-pub enum BwCipherType {
-    Login = 1,
-    Note = 2,
-    Card = 3,
-    Identity = 4,
-    Ssh = 5,
+#[derive(Debug, Serialize)]
+struct BwPreLoginRequest<'a> {
+    pub email: &'a str,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct BwLogin {
-    pub totp: Option<String>,
-    pub username: Option<String>,
-    pub password: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BwSshKey {
-    #[serde(rename = "keyFingerprint")]
-    pub key_fingerprint: String,
-    #[serde(rename = "privateKey")]
-    pub private_key: String,
-    #[serde(rename = "publicKey")]
-    pub public_key: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BwCipher {
-    pub id: String,
-    pub data: BwCipherData,
-    pub name: String,
-    #[serde(rename = "deletedDate")]
-    pub deleted_data: Option<String>,
-    #[serde(rename = "type")]
-    pub cipher_type: BwCipherType,
-    pub login: Option<BwLogin>,
-    #[serde(rename = "sshKey")]
-    pub ssh_key: Option<BwSshKey>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BwSync {
-    pub ciphers: Vec<BwCipher>,
-    pub profile: BwProfile,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BwCipherResponse {
+struct BwCipherResponse {
     #[serde(rename = "continuationToken")]
     pub continuation_token: Option<String>,
     pub data: Vec<BwCipher>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct BwAuth {
-    #[serde(rename = "KdfIterations")]
-    pub kdf_iterations: u32,
-    #[serde(rename = "Key")]
-    pub key: String,
-    pub access_token: String,
-    pub expires_in: u64,
-    pub token_type: String,
-    pub scope: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BwProfile {
-    pub email: String,
-    pub premium: bool,
-    pub key: String,
-    #[serde(rename = "privateKey")]
-    pub private_key: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct BwPreLoginRequest<'a> {
-    pub email: &'a str,
-}
-#[derive(Debug, Deserialize)]
-pub struct BwPreLogin {
-    #[serde(rename = "kdfIterations")]
-    pub kdf_iterations: u32,
 }
 
 pub struct BwApi {
@@ -250,14 +169,11 @@ impl BwApi {
                 format!("{}/api/ciphers", self.server)
             };
 
-            let resp = self
-                .client
-                .get(ciphers_url)
-                .bearer_auth(&auth.access_token)
-                .send()
-                .await?
-                .json::<BwCipherResponse>()
-                .await?;
+            let ret = self.client.get(ciphers_url).bearer_auth(&auth.access_token).send().await?;
+
+            let text = ret.text().await?;
+
+            let resp: BwCipherResponse = serde_json::from_str(&text)?;
 
             ciphers.extend(resp.data);
 
@@ -271,32 +187,12 @@ impl BwApi {
         Ok(ciphers)
     }
 
-    pub async fn ssh_keys(&self, auth: &BwAuth) -> Result<Vec<BwSshKey>> {
-        let mut keys = vec![];
-
-        let ciphers = self.ciphers_with_type(auth, BwCipherType::Ssh).await?;
-
-        for c in ciphers {
-            if let Some(ssh) = c.ssh_key {
-                keys.push(ssh);
-            }
-        }
-
-        Ok(keys)
+    pub async fn ssh_keys(&self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
+        self.ciphers_with_type(auth, BwCipherType::Ssh).await
     }
 
-    pub async fn logins(&self, auth: &BwAuth) -> Result<Vec<BwLogin>> {
-        let mut logins = vec![];
-
-        let ciphers = self.ciphers_with_type(auth, BwCipherType::Login).await?;
-
-        for c in ciphers {
-            if let Some(login) = c.login {
-                logins.push(login);
-            }
-        }
-
-        Ok(logins)
+    pub async fn logins(&self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
+        self.ciphers_with_type(auth, BwCipherType::Login).await
     }
 
     pub async fn totp<I>(&self, auth: &BwAuth, id: I) -> Result<String>
@@ -305,7 +201,7 @@ impl BwApi {
     {
         let cipher = self.cipher(auth, id).await?;
 
-        if let Some(login) = cipher.login
+        if let BwCipherData::Login(login) = cipher.data
             && let Some(encrypted_totp) = login.totp
         {
             Ok(encrypted_totp)

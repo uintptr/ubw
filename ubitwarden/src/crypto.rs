@@ -7,7 +7,7 @@ use bitwarden_crypto::{EncString, HashPurpose, Kdf, KeyDecryptable, MasterKey, S
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::{
-    api::BwAuth,
+    api_types::BwAuth,
     error::{Error, Result},
 };
 

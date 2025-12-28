@@ -13,10 +13,8 @@ use ssh_agent_lib::{
     ssh_key::{Algorithm, PrivateKey, PublicKey, Signature, private::KeypairData},
 };
 use tokio::{fs, net::UnixListener, select, sync::watch::Receiver};
-use ubitwarden::{
-    api::{BwApi, BwSshKey},
-    crypto::BwCrypt,
-};
+use ubitwarden::api_types::{BwCipherData, BwSshKey};
+use ubitwarden::{api::BwApi, crypto::BwCrypt};
 
 use log::{error, info, warn};
 
@@ -148,7 +146,12 @@ async fn get_remote_keys() -> Result<(BwCrypt, Vec<BwSshKey>)> {
     // Create API client and fetch all ciphers
     let api = BwApi::new(&session.email, &session.server_url)?;
 
-    let ssh_keys = api.ssh_keys(&session.auth).await?;
+    let mut ssh_keys = vec![];
+    for cipher in api.ssh_keys(&session.auth).await? {
+        if let BwCipherData::Ssh(ssh) = cipher.data {
+            ssh_keys.push(ssh)
+        }
+    }
 
     Ok((crypt, ssh_keys))
 }
