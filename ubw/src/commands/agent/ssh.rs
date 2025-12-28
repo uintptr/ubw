@@ -332,11 +332,11 @@ impl SshAgentServer {
         let fd = UnixListener::bind(&socket_path)?;
 
         let perms = Permissions::from_mode(0o600);
-        fs::set_permissions(socket_path, perms).await?;
+        fs::set_permissions(&socket_path, perms).await?;
 
         let agent = BwSshAgent::new(self.cache.clone());
 
-        select! {
+        let ret = select! {
             _ = quit_rx.changed() => Ok(()),
             ret = listen(fd, agent) => {
                 match ret{
@@ -347,6 +347,16 @@ impl SshAgentServer {
                     }
                 }
             }
+        };
+
+        if socket_path.exists() {
+            info!("Deleting {}", socket_path.display());
+
+            if let Err(e) = fs::remove_file(&socket_path).await {
+                error!("Unable to delete {} ({e})", socket_path.display());
+            }
         }
+
+        ret
     }
 }
