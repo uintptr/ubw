@@ -98,23 +98,6 @@ pub struct BwIdentity {
     pub last_name: Option<String>,
     #[serde(rename = "middleName")]
     pub middle_name: Option<String>,
-    pub title: Option<String>,
-    pub address1: Option<String>,
-    pub address2: Option<String>,
-    pub address3: Option<String>,
-    pub city: Option<String>,
-    pub state: Option<String>,
-    #[serde(rename = "postalCode")]
-    pub postal_code: Option<String>,
-    pub country: Option<String>,
-    pub company: Option<String>,
-    pub email: Option<String>,
-    pub phone: Option<String>,
-    pub ssn: Option<String>,
-    #[serde(rename = "licenseNumber")]
-    pub license_number: Option<String>,
-    #[serde(rename = "passportNumber")]
-    pub passport_number: Option<String>,
 }
 
 //
@@ -163,19 +146,19 @@ where
     match cipher_type {
         BwCipherType::Login => serde_json::from_value(value.clone())
             .map(BwCipherData::Login)
-            .map_err(|e| serde::de::Error::custom(e)),
+            .map_err(serde::de::Error::custom),
         BwCipherType::Note => serde_json::from_value(value.clone())
             .map(BwCipherData::Note)
-            .map_err(|e| serde::de::Error::custom(e)),
+            .map_err(serde::de::Error::custom),
         BwCipherType::Card => serde_json::from_value(value.clone())
             .map(BwCipherData::Card)
-            .map_err(|e| serde::de::Error::custom(e)),
+            .map_err(serde::de::Error::custom),
         BwCipherType::Identity => serde_json::from_value(value.clone())
             .map(BwCipherData::Identity)
-            .map_err(|e| serde::de::Error::custom(e)),
+            .map_err(serde::de::Error::custom),
         BwCipherType::Ssh => serde_json::from_value(value.clone())
             .map(BwCipherData::Ssh)
-            .map_err(|e| serde::de::Error::custom(e)),
+            .map_err(serde::de::Error::custom),
     }
 }
 
@@ -201,6 +184,7 @@ pub struct BwCipher {
 }
 
 impl BwCipher {
+    #[must_use]
     pub fn deleted(&self) -> bool {
         self.deleted_data.is_some()
     }

@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use tokio::io::{AsyncWriteExt, stdout};
 use ubitwarden::{api::BwApi, api_types::BwCipherData, crypto::BwCrypt, error::Error};
 
-use crate::commands::{agent::utils::load_session, login::login_from_cache};
+use crate::commands::{agent::utils::load_session, auth::login_from_cache};
 
 pub async fn command_password<I>(id: I) -> Result<()>
 where

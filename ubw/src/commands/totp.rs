@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use ubitwarden::{api::BwApi, crypto::BwCrypt};
 
-use crate::commands::{agent::utils::load_session, login::login_from_cache};
+use crate::commands::{agent::utils::load_session, auth::login_from_cache};
 
 pub async fn command_totp<I>(id: I) -> Result<()>
 where

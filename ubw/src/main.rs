@@ -6,8 +6,8 @@ use rstaples::logging::StaplesLogger;
 
 use ubw::commands::{
     agent::server::{AgentArgs, command_agent},
+    auth::{AuthArgs, command_auth, command_logins},
     ciphers::{command_cipher, command_ciphers},
-    login::{LoginArgs, command_login, command_logins},
     password::command_password,
     ssh::command_ssh_keys,
     totp::command_totp,
@@ -25,7 +25,7 @@ pub enum Commands {
     /// Cache Server
     Agent(AgentArgs),
     /// Create a new session
-    Login(LoginArgs),
+    Auth(AuthArgs),
     /// List ciphers
     Ciphers,
     /// Pull cipher
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     StaplesLogger::new().with_colors().with_log_level(log_level).start();
 
     match args.command {
-        Commands::Login(login) => command_login(login).await,
+        Commands::Auth(auth) => command_auth(auth).await,
         Commands::Agent(a) => command_agent(a).await,
         Commands::Ciphers => command_ciphers().await,
         Commands::Cipher(cipher) => command_cipher(cipher.id).await,

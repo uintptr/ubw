@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -22,6 +20,21 @@ struct BwCipherResponse {
     #[serde(rename = "continuationToken")]
     pub continuation_token: Option<String>,
     pub data: Vec<BwCipher>,
+}
+
+#[derive(Debug, Serialize)]
+struct LoginRequest<'a> {
+    grant_type: &'a str,
+    username: &'a str,
+    password: &'a str,
+    scope: &'a str,
+    client_id: &'a str,
+    #[serde(rename = "deviceType")]
+    device_type: &'a str,
+    #[serde(rename = "deviceIdentifier")]
+    device_identifier: &'a str,
+    #[serde(rename = "deviceName")]
+    device_name: &'a str,
 }
 
 pub struct BwApi {
@@ -80,6 +93,10 @@ impl BwApi {
         Ok(ciphers)
     }
 
+    ////////////////////////////////////////////////////////////////////////////
+    // PUBLIC
+    ////////////////////////////////////////////////////////////////////////////
+
     pub async fn auth<S>(&self, password: S) -> Result<BwAuth>
     where
         S: AsRef<str>,
@@ -88,26 +105,26 @@ impl BwApi {
 
         let auth_url = format!("{}/identity/connect/token", self.server);
 
-        let mut params = HashMap::new();
-
         let pre = self.prelogin().await?;
 
         let password_hash = build_password_hash(pre.kdf_iterations, &self.email, password.as_ref())?;
 
-        params.insert("grant_type", "password");
-        params.insert("username", &self.email);
-        params.insert("password", &password_hash);
-        params.insert("scope", "api offline_access");
-        params.insert("client_id", "web");
-        params.insert("deviceType", "10");
-        params.insert("deviceIdentifier", UBW_DEVICE_ID);
-        params.insert("deviceName", "ubw");
+        let login_req = LoginRequest {
+            grant_type: "password",
+            username: &self.email,
+            password: &password_hash,
+            scope: "api offline_access",
+            client_id: "web",
+            device_type: "10",
+            device_identifier: UBW_DEVICE_ID,
+            device_name: "ubw",
+        };
 
         let ret = self
             .client
             .post(auth_url)
             .header("Content-Type", "application/x-www-form-urlencoded")
-            .form(&params)
+            .form(&login_req)
             .send()
             .await?;
 
@@ -193,6 +210,13 @@ impl BwApi {
 
     pub async fn logins(&self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
         self.ciphers_with_type(auth, BwCipherType::Login).await
+    }
+
+    pub async fn login<I>(&self, auth: &BwAuth, id: I) -> Result<BwCipher>
+    where
+        I: AsRef<str>,
+    {
+        self.cipher(auth, id).await
     }
 
     pub async fn totp<I>(&self, auth: &BwAuth, id: I) -> Result<String>

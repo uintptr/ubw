@@ -7,7 +7,7 @@ use ubitwarden::{
     error::Error,
 };
 
-use crate::commands::{agent::utils::load_session, login::login_from_cache};
+use crate::commands::{agent::utils::load_session, auth::login_from_cache};
 
 #[derive(Tabled)]
 struct CipherTable<'a> {

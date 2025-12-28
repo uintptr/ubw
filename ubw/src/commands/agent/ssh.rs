@@ -149,7 +149,7 @@ async fn get_remote_keys() -> Result<(BwCrypt, Vec<BwSshKey>)> {
     let mut ssh_keys = vec![];
     for cipher in api.ssh_keys(&session.auth).await? {
         if let BwCipherData::Ssh(ssh) = cipher.data {
-            ssh_keys.push(ssh)
+            ssh_keys.push(ssh);
         }
     }
 

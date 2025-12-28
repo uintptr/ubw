@@ -29,7 +29,7 @@ struct LoginConfigData {
 }
 
 #[derive(Args)]
-pub struct LoginArgs {
+pub struct AuthArgs {
     /// email address
     #[arg(short, long)]
     pub email: Option<String>,
@@ -194,7 +194,7 @@ pub async fn command_logins() -> Result<()> {
     Ok(())
 }
 
-pub async fn command_login(args: LoginArgs) -> Result<()> {
+pub async fn command_auth(args: AuthArgs) -> Result<()> {
     if let Err(e) = ping_agent().await {
         warn!("{e}");
         info!("unable to talk to the server. spawning a new one");
