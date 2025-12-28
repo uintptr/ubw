@@ -109,8 +109,9 @@ impl BwCrypt {
 
                             // Parse URL and uppercase the secret parameter
                             let normalized = if let Some(secret_start) = totp_string.find("secret=") {
-                                let before_secret = &totp_string[..secret_start + 7]; // "secret="
-                                let after_secret = &totp_string[secret_start + 7..];
+                                let secret_end_pos = secret_start.saturating_add(7);
+                                let before_secret = &totp_string[..secret_end_pos]; // "secret="
+                                let after_secret = &totp_string[secret_end_pos..];
 
                                 // Find the end of the secret (next & or end of string)
                                 let secret_end = after_secret.find('&').unwrap_or(after_secret.len());

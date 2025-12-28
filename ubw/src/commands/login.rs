@@ -5,10 +5,11 @@ use clap::Args;
 use anyhow::{Result, anyhow, bail};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
+use ubitwarden::{api::BwApi, crypto::BwCrypt};
 
 use crate::commands::agent::{
     server::spawn_server,
-    utils::{fetch_credentials, ping_agent, store_credentials},
+    utils::{fetch_credentials, load_session, ping_agent, store_credentials},
 };
 
 const LOGIN_FILE_NAME: &str = "login.json";
@@ -88,6 +89,49 @@ impl LoginConfigData {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// PUBLIC
+////////////////////////////////////////////////////////////////////////////////
+pub async fn login_from_cache() -> Result<()> {
+    if let Err(e) = ping_agent().await {
+        error!("{e}");
+        info!("unable to talk to the server. spawning a new one");
+        spawn_server().await?;
+    }
+
+    let cache = LoginConfigData::from_file()?;
+
+    if fetch_credentials().await.is_err() {
+        store_credentials(&cache.email, &cache.server_url).await?;
+        LoginConfigData::new(&cache.email, &cache.server_url).sync()?;
+    }
+
+    Ok(())
+}
+
+pub async fn command_logins() -> Result<()> {
+    if let Err(e) = login_from_cache().await {
+        bail!("Not logged in ({e})");
+    }
+
+    let session = load_session().await?;
+
+    let crypt = BwCrypt::from_encoded_key(session.key)?;
+
+    let api = BwApi::new(&session.email, &session.server_url)?;
+
+    let logins = api.logins(&session.auth).await?;
+
+    for login in logins {
+        if let Some(encrypted_username) = login.username {
+            let name: String = crypt.decrypt(&encrypted_username)?.try_into()?;
+            println!("* {name}");
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn command_login(args: LoginArgs) -> Result<()> {
     if let Err(e) = ping_agent().await {
         warn!("{e}");
@@ -128,21 +172,4 @@ pub async fn command_login(args: LoginArgs) -> Result<()> {
     fetch_credentials().await?;
 
     LoginConfigData::new(email, server_url).sync()
-}
-
-pub async fn login_from_cache() -> Result<()> {
-    if let Err(e) = ping_agent().await {
-        error!("{e}");
-        info!("unable to talk to the server. spawning a new one");
-        spawn_server().await?;
-    }
-
-    let cache = LoginConfigData::from_file()?;
-
-    if fetch_credentials().await.is_err() {
-        store_credentials(&cache.email, &cache.server_url).await?;
-        LoginConfigData::new(&cache.email, &cache.server_url).sync()?;
-    }
-
-    Ok(())
 }

@@ -124,6 +124,43 @@ impl BwApi {
         })
     }
 
+    async fn ciphers_with_type(&self, auth: &BwAuth, cipher_type: BwCipherType) -> Result<Vec<BwCipher>> {
+        let mut cont_token = None;
+
+        let mut ciphers = Vec::new();
+        let cipher_type = cipher_type as u8;
+
+        loop {
+            let ciphers_url = if let Some(token) = cont_token {
+                format!(
+                    "{}/api/ciphers?continuationToken={token}&type={cipher_type}",
+                    self.server
+                )
+            } else {
+                format!("{}/api/ciphers?type={cipher_type}", self.server)
+            };
+
+            let resp = self
+                .client
+                .get(ciphers_url)
+                .bearer_auth(&auth.access_token)
+                .send()
+                .await?
+                .json::<BwCipherResponse>()
+                .await?;
+
+            ciphers.extend(resp.data);
+
+            if let Some(token) = resp.continuation_token {
+                cont_token = Some(token);
+            } else {
+                break;
+            }
+        }
+
+        Ok(ciphers)
+    }
+
     pub async fn auth<S>(&self, password: S) -> Result<BwAuth>
     where
         S: AsRef<str>,
@@ -236,24 +273,29 @@ impl BwApi {
     pub async fn ssh_keys(&self, auth: &BwAuth) -> Result<Vec<BwSshKey>> {
         let mut keys = vec![];
 
-        let url = format!("{}/api/ciphers?type=5", self.server);
+        let ciphers = self.ciphers_with_type(auth, BwCipherType::Ssh).await?;
 
-        let resp = self
-            .client
-            .get(url)
-            .bearer_auth(&auth.access_token)
-            .send()
-            .await?
-            .json::<BwCipherResponse>()
-            .await?;
-
-        for c in resp.data {
+        for c in ciphers {
             if let Some(ssh) = c.ssh_key {
                 keys.push(ssh);
             }
         }
 
         Ok(keys)
+    }
+
+    pub async fn logins(&self, auth: &BwAuth) -> Result<Vec<BwLogin>> {
+        let mut logins = vec![];
+
+        let ciphers = self.ciphers_with_type(auth, BwCipherType::Login).await?;
+
+        for c in ciphers {
+            if let Some(login) = c.login {
+                logins.push(login);
+            }
+        }
+
+        Ok(logins)
     }
 
     pub async fn totp<I>(&self, auth: &BwAuth, id: I) -> Result<String>

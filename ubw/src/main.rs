@@ -7,7 +7,7 @@ use rstaples::logging::StaplesLogger;
 use ubw::commands::{
     agent::server::{AgentArgs, command_agent},
     ciphers::{command_cipher, command_ciphers},
-    login::{LoginArgs, command_login},
+    login::{LoginArgs, command_login, command_logins},
     password::command_password,
     ssh::command_ssh_keys,
     totp::command_totp,
@@ -36,6 +36,8 @@ pub enum Commands {
     Password(IdArgs),
     /// List SSH keys
     SshKeys,
+    /// List Loginms
+    Logins,
 }
 
 #[derive(Parser)]
@@ -70,5 +72,6 @@ async fn main() -> Result<()> {
         Commands::Totp(totp) => command_totp(totp.id).await,
         Commands::Password(pass) => command_password(pass.id).await,
         Commands::SshKeys => command_ssh_keys().await,
+        Commands::Logins => command_logins().await,
     }
 }
