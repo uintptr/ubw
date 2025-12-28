@@ -40,6 +40,8 @@ pub enum Error {
     ClientVerificationFailure,
     #[error("End Of File")]
     EndOfFile,
+    #[error("Authentication Failure")]
+    AuthFailure,
 
     //
     // 2d party

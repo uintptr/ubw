@@ -3,7 +3,7 @@ resolver = "2"
 members = ["ubitwarden", "ubw"]
 
 [workspace.package]
-version = "0.0.14"
+version = "0.0.15"
 edition = "2024"
 
 [workspace.dependencies]
@@ -16,6 +16,7 @@ derive_more = { version = "2.1", features = ["display"] }
 dialoguer = "0.12"
 dirs = "6.0"
 ed25519-dalek = "2.2"
+figlet-rs = "0.1"
 libc = "0.2"
 log = "0.4"
 nix = { version = "0.30", features = ["user"] }
@@ -24,6 +25,7 @@ reqwest = { version = "0.12", default-features = false, features = [
   "rustls-tls"
 ] }
 rstaples = "0.3"
+rust-embed = "8.9"
 serde = "1.0"
 serde_json = "1.0"
 serde_repr = "0.1"

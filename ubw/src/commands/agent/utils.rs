@@ -1,7 +1,4 @@
-use std::env;
-
 use anyhow::Result;
-use dialoguer::Password;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
@@ -121,40 +118,16 @@ pub async fn fetch_credentials() -> Result<BwCredentials> {
     Ok(creds)
 }
 
-pub async fn store_credentials<E, U>(email: E, server_url: U) -> Result<()>
+pub async fn store_credentials<E, P, U>(email: E, server_url: U, password: P) -> Result<()>
 where
-    E: AsRef<str>,
-    U: AsRef<str>,
+    E: Into<String>,
+    U: Into<String>,
+    P: Into<String>,
 {
-    let api = BwApi::new(&email, &server_url)?;
-
-    let password = loop {
-        //
-        // helps with testing but not recommended
-        //
-        let password = if let Ok(password) = env::var("UBW_PASSWORD") {
-            info!("using UBW_PASSWORD=***********");
-            password.clone()
-        } else {
-            let prompt = format!("Password for {}", email.as_ref());
-            Password::new().with_prompt(prompt).interact()?
-        };
-
-        //
-        // try them
-        //
-        if let Err(e) = api.auth(&password).await {
-            error!("auth failure {e}");
-            continue;
-        }
-
-        break password;
-    };
-
     let creds = BwCredentials {
-        email: email.as_ref().to_string(),
-        password,
-        server_url: server_url.as_ref().to_string(),
+        email: email.into(),
+        password: password.into(),
+        server_url: server_url.into(),
     };
 
     let encoded_creds = serde_json::to_string(&creds)?;

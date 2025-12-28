@@ -3,17 +3,24 @@ use std::{env, fs, io::Write};
 use clap::Args;
 
 use anyhow::{Result, anyhow, bail};
+use dialoguer::Password;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use ubitwarden::{api::BwApi, crypto::BwCrypt};
 
-use crate::commands::agent::{
-    server::spawn_server,
-    utils::{fetch_credentials, load_session, ping_agent, store_credentials},
+use crate::{
+    banner::display_banner,
+    commands::agent::{
+        server::spawn_server,
+        utils::{fetch_credentials, load_session, ping_agent, store_credentials},
+    },
 };
 
 const LOGIN_FILE_NAME: &str = "login.json";
 const CONFIG_DIR: &str = env!("CARGO_PKG_NAME");
+const UBW_LOGIN_ATTEMPTS: i8 = 3;
+const UBW_APP_NAME: &str = env!("CARGO_PKG_NAME");
+const UBW_APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Serialize, Deserialize)]
 struct LoginConfigData {
@@ -89,9 +96,60 @@ impl LoginConfigData {
     }
 }
 
+async fn ask_password_loop<E, U>(email: E, server_url: U) -> Result<String>
+where
+    E: AsRef<str>,
+    U: AsRef<str>,
+{
+    let api = BwApi::new(&email, &server_url)?;
+
+    let banner_text = format!("{UBW_APP_NAME} {UBW_APP_VERSION}");
+    display_banner(banner_text, "pagga")?;
+
+    for attempt in 1..=UBW_LOGIN_ATTEMPTS {
+        //
+        // helps with testing but not recommended
+        //
+        let password = if let Ok(password) = env::var("UBW_PASSWORD") {
+            info!("using UBW_PASSWORD={:*<width$}", "", width = password.len());
+            password
+        } else {
+            let prompt = format!("\x1b[1;35m{}\x1b[0m", email.as_ref());
+            //let prompt = format!("Password for {}", email.as_ref());
+            Password::with_theme(&dialoguer::theme::ColorfulTheme::default())
+                .with_prompt(prompt)
+                .interact()?
+        };
+
+        //
+        // try it before blindly accepting it
+        //
+        match api.auth(&password).await {
+            Ok(_) => return Ok(password),
+            Err(e) => {
+                if attempt == UBW_LOGIN_ATTEMPTS {
+                    return Err(e.into());
+                }
+            }
+        }
+    }
+
+    unreachable!()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC
 ////////////////////////////////////////////////////////////////////////////////
+
+pub async fn ask_password<E, U>(email: E, server_url: U) -> Result<String>
+where
+    E: AsRef<str>,
+    U: AsRef<str>,
+{
+    let password = ask_password_loop(email, server_url).await?;
+    Ok(password)
+}
+
 pub async fn login_from_cache() -> Result<()> {
     if let Err(e) = ping_agent().await {
         error!("{e}");
@@ -102,7 +160,8 @@ pub async fn login_from_cache() -> Result<()> {
     let cache = LoginConfigData::from_file()?;
 
     if fetch_credentials().await.is_err() {
-        store_credentials(&cache.email, &cache.server_url).await?;
+        let password = ask_password(&cache.email, &cache.server_url).await?;
+        store_credentials(&cache.email, &cache.server_url, password).await?;
         LoginConfigData::new(&cache.email, &cache.server_url).sync()?;
     }
 
@@ -168,7 +227,8 @@ pub async fn command_login(args: LoginArgs) -> Result<()> {
         bail!("missing server url");
     };
 
-    store_credentials(email, server_url).await?;
+    let password = ask_password(&email, &server_url).await?;
+    store_credentials(email, server_url, password).await?;
     fetch_credentials().await?;
 
     LoginConfigData::new(email, server_url).sync()
