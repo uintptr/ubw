@@ -1,4 +1,5 @@
 use anyhow::{Result, bail};
+use tokio::io::{AsyncWriteExt, stdout};
 use ubitwarden::{api::BwApi, crypto::BwCrypt, error::Error};
 
 use crate::commands::{agent::utils::load_session, login::login_from_cache};
@@ -22,7 +23,9 @@ where
     if let Some(login) = cipher.login {
         if let Some(encrypted_password) = login.password {
             let pass: String = crypt.decrypt(&encrypted_password)?.try_into()?;
-            println!("{pass}");
+            // can't safely use the println! macro
+            stdout().write_all(pass.as_bytes()).await?;
+            stdout().flush().await?;
             Ok(())
         } else {
             Err(Error::PasswordNotFound.into())
