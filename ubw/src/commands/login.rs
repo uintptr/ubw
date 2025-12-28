@@ -1,4 +1,4 @@
-use std::{env, fs, io::Write};
+use std::{env, fs, io::Write, os::unix::fs::OpenOptionsExt};
 
 use clap::Args;
 
@@ -88,6 +88,7 @@ impl LoginConfigData {
             .create(true)
             .write(true)
             .truncate(true)
+            .mode(0o600)
             .open(config_file)?;
 
         f.write_all(data.as_bytes())?;
