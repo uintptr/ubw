@@ -133,12 +133,12 @@ where
         BwCipherType::Login
     } else if value.get("keyFingerprint").is_some() {
         BwCipherType::Ssh
-    } else if value.get("notes").is_some() {
-        BwCipherType::Note
     } else if value.get("cardholderName").is_some() {
         BwCipherType::Card
     } else if value.get("passportNumber").is_some() {
         BwCipherType::Identity
+    } else if value.get("notes").is_some() {
+        BwCipherType::Note
     } else {
         return Err(serde::de::Error::custom("Unsupported data type"));
     };
@@ -159,15 +159,6 @@ where
         BwCipherType::Ssh => serde_json::from_value(value.clone())
             .map(BwCipherData::Ssh)
             .map_err(serde::de::Error::custom),
-    }
-}
-
-impl<'de> Deserialize<'de> for BwCipherData {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserialize_cipher_data(deserializer)
     }
 }
 
