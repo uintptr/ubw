@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, RwLock};
 
 use anyhow::{Result, anyhow, bail};
@@ -327,7 +329,10 @@ impl SshAgentServer {
             fs::remove_file(&socket_path).await?;
         }
 
-        let fd = UnixListener::bind(socket_path)?;
+        let fd = UnixListener::bind(&socket_path)?;
+
+        let perms = Permissions::from_mode(0o600);
+        fs::set_permissions(socket_path, perms).await?;
 
         let agent = BwSshAgent::new(self.cache.clone());
 

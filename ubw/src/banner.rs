@@ -36,7 +36,7 @@ where
     let content = fig.convert(text.as_ref());
 
     if let Some(banner) = content {
-        println!("{}", banner);
+        println!("{banner}");
     }
 
     Ok(())
