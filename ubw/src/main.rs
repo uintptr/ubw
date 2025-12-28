@@ -8,9 +8,8 @@ use ubw::commands::{
     agent::server::{AgentArgs, command_agent},
     auth::{AuthArgs, command_auth, command_logins},
     ciphers::{command_cipher, command_ciphers},
-    password::command_password,
+    login::{command_password, command_totp},
     ssh::command_ssh_keys,
-    totp::command_totp,
 };
 
 #[derive(Args)]

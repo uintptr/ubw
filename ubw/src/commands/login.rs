@@ -1,8 +1,33 @@
+use crate::commands::{agent::utils::load_session, auth::login_from_cache};
 use anyhow::{Result, bail};
 use tokio::io::{AsyncWriteExt, stdout};
 use ubitwarden::{api::BwApi, api_types::BwCipherData, crypto::BwCrypt, error::Error};
 
-use crate::commands::{agent::utils::load_session, auth::login_from_cache};
+pub async fn command_totp<I>(id: I) -> Result<()>
+where
+    I: AsRef<str>,
+{
+    if let Err(e) = login_from_cache().await {
+        bail!("Not logged in ({e})");
+    }
+
+    let session = load_session().await?;
+
+    let crypt = BwCrypt::from_encoded_key(session.key)?;
+
+    let api = BwApi::new(&session.email, &session.server_url)?;
+
+    let cipher = api.login(&session.auth, id.as_ref()).await?;
+
+    if let BwCipherData::Login(login) = cipher.data
+        && let Some(encrypted_totp) = login.totp
+    {
+        let totp = crypt.parse_totp(encrypted_totp)?;
+        println!("totp: {totp}");
+    }
+
+    Ok(())
+}
 
 pub async fn command_password<I>(id: I) -> Result<()>
 where
