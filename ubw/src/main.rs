@@ -77,11 +77,14 @@ async fn tokio_entry(args: UserArgs) -> Result<()> {
 fn daemonize() -> Result<()> {
     info!("daemonizing");
 
+    let home_dir = dirs::home_dir().ok_or(anyhow!("unable to find home dir"))?;
+
     let data_dir = dirs::data_dir().ok_or(anyhow!("unable to find data-dir"))?;
     let data_dir = data_dir.join(UBW_DATA_DIR);
 
-    let home_dir = dirs::home_dir().ok_or(anyhow!("unable to find home dir"))?;
-
+    //
+    // create it if it doesn't already exist
+    //
     if !data_dir.exists()
         && let Err(e) = fs::create_dir_all(&data_dir)
     {

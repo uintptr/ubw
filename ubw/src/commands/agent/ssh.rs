@@ -21,6 +21,7 @@ use log::{error, info, warn};
 use crate::common_const::UBW_DATA_DIR;
 
 use super::utils::load_session;
+
 const SOCK_PREFIX: &str = env!("CARGO_PKG_NAME");
 
 #[derive(Clone)]

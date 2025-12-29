@@ -17,13 +17,11 @@ use crate::{
             store_credentials,
         },
     },
+    common_const::{UBW_APP_NAME, UBW_APP_VERSION, UBW_CONFIG_DIR},
 };
 
 const LOGIN_FILE_NAME: &str = "login.json";
-const CONFIG_DIR: &str = env!("CARGO_PKG_NAME");
 const UBW_LOGIN_ATTEMPTS: i8 = 3;
-const UBW_APP_NAME: &str = env!("CARGO_PKG_NAME");
-const UBW_APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const UBW_DEF_FIGLET_FONT: &str = "pagga";
 
 #[derive(Serialize, Deserialize)]
@@ -62,7 +60,7 @@ impl LoginConfigData {
     pub fn from_file() -> Result<Self> {
         let config_dir = dirs::config_dir().ok_or(anyhow!("config dir not found"))?;
 
-        let config_file = config_dir.join(CONFIG_DIR).join(LOGIN_FILE_NAME);
+        let config_file = config_dir.join(UBW_CONFIG_DIR).join(LOGIN_FILE_NAME);
 
         if !config_file.exists() {
             bail!("{} doesn't exist", config_file.display())
@@ -78,7 +76,7 @@ impl LoginConfigData {
     pub fn sync(&self) -> Result<()> {
         let config_dir = dirs::config_dir().ok_or(anyhow!("config dir not found"))?;
 
-        let config_dir = config_dir.join(CONFIG_DIR);
+        let config_dir = config_dir.join(UBW_CONFIG_DIR);
 
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir)?;
