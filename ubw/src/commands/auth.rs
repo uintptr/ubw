@@ -24,6 +24,7 @@ const CONFIG_DIR: &str = env!("CARGO_PKG_NAME");
 const UBW_LOGIN_ATTEMPTS: i8 = 3;
 const UBW_APP_NAME: &str = env!("CARGO_PKG_NAME");
 const UBW_APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+const UBW_DEF_FIGLET_FONT: &str = "pagga";
 
 #[derive(Serialize, Deserialize)]
 struct LoginConfigData {
@@ -108,7 +109,7 @@ where
     let api = BwApi::new(&email, &server_url)?;
 
     let banner_text = format!("{UBW_APP_NAME} {UBW_APP_VERSION}");
-    display_banner(banner_text, "pagga")?;
+    display_banner(banner_text, UBW_DEF_FIGLET_FONT)?;
 
     for attempt in 1..=UBW_LOGIN_ATTEMPTS {
         //
