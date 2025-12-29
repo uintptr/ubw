@@ -80,6 +80,11 @@ impl UBWAgent {
         self.fetch_data(key.as_ref()).await
     }
 
+    async fn store_session(&mut self, session: &BwSession) -> Result<()> {
+        let encoded_session = session.to_string();
+        self.store_user_data("session", encoded_session).await
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // PUBLIC
     ////////////////////////////////////////////////////////////////////////////
@@ -93,11 +98,6 @@ impl UBWAgent {
     //
     pub async fn delete_session(&mut self) -> Result<()> {
         self.write_string("delete:session").await
-    }
-
-    pub async fn store_session(&mut self, session: &BwSession) -> Result<()> {
-        let encoded_session = session.to_string();
-        self.store_user_data("session", encoded_session).await
     }
 
     pub async fn fetch_session(&mut self) -> Result<BwSession> {

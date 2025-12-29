@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use log::{error, warn};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 
 use crate::{api_types::BwAuth, credentials::BwCredentials, crypto::BwCrypt, error::Result};
@@ -73,7 +73,7 @@ impl FromStr for BwSession {
         let inner: BwSessionData = match serde_json::from_str(s) {
             Ok(v) => v,
             Err(e) => {
-                error!("unable to deserialize session data ({e})");
+                info!("unable to deserialize session data ({e})");
                 return Err(e.into());
             }
         };
