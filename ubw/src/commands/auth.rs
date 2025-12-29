@@ -256,7 +256,7 @@ pub async fn command_logout() -> Result<()> {
     if agent.fetch_credentials().await.is_ok() {
         info!("deleting credentials");
         if let Err(e) = agent.delete_credentials().await {
-            error!("unable to delete session ({e})");
+            error!("unable to delete credentials ({e})");
             return Err(e.into());
         }
     }
