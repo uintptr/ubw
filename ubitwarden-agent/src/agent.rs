@@ -96,13 +96,13 @@ impl UBWAgent {
     }
 
     pub async fn store_session(&mut self, session: &BwSession) -> Result<()> {
-        let encoded_session = serde_json::to_string(session)?;
+        let encoded_session = session.to_string();
         self.store_user_data("session", encoded_session).await
     }
 
     pub async fn fetch_session(&mut self) -> Result<BwSession> {
         let data = self.fetch_user_data("session").await?;
-        let session: BwSession = serde_json::from_str(&data)?;
+        let session: BwSession = data.parse()?;
         Ok(session)
     }
 

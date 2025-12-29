@@ -13,8 +13,9 @@ use ssh_agent_lib::{
     ssh_key::{Algorithm, PrivateKey, PublicKey, Signature, private::KeypairData},
 };
 use tokio::{fs, net::UnixListener, select, sync::watch::Receiver};
+use ubitwarden::api::BwApi;
 use ubitwarden::api_types::{BwCipherData, BwSshKey};
-use ubitwarden::{api::BwApi, crypto::BwCrypt};
+use ubitwarden::session::BwSession;
 
 use log::{error, info, warn};
 use ubitwarden_agent::agent::UBWAgent;
@@ -138,13 +139,11 @@ impl BwSshAgent {
     }
 }
 
-async fn get_remote_keys() -> Result<(BwCrypt, Vec<BwSshKey>)> {
+async fn get_remote_keys() -> Result<(BwSession, Vec<BwSshKey>)> {
     let mut agent = UBWAgent::new().await?;
 
     // Load session and fetch ciphers from Bitwarden
     let session = agent.load_session().await?;
-
-    let crypt = BwCrypt::from_encoded_key(&session.key)?;
 
     // Create API client and fetch all ciphers
     let api = BwApi::new(&session.email, &session.server_url)?;
@@ -156,7 +155,7 @@ async fn get_remote_keys() -> Result<(BwCrypt, Vec<BwSshKey>)> {
         }
     }
 
-    Ok((crypt, ssh_keys))
+    Ok((session, ssh_keys))
 }
 
 #[ssh_agent_lib::async_trait]

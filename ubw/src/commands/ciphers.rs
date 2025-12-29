@@ -3,8 +3,8 @@ use tabled::{Table, Tabled, settings::Style};
 use ubitwarden::{
     api::BwApi,
     api_types::{BwCipher, BwCipherData},
-    crypto::BwCrypt,
     error::Error,
+    session::BwSession,
 };
 use ubitwarden_agent::agent::UBWAgent;
 
@@ -19,24 +19,24 @@ struct CipherTable<'a> {
     totp: String,
 }
 
-fn get_totp(crypt: &BwCrypt, cipher: &BwCipher) -> Result<String> {
+fn get_totp(sessions: &BwSession, cipher: &BwCipher) -> Result<String> {
     if let BwCipherData::Login(login) = &cipher.data
         && let Some(totp) = &login.totp
     {
-        let totp_string = crypt.parse_totp(totp)?;
+        let totp_string = sessions.parse_totp(totp)?;
         Ok(totp_string)
     } else {
         Err(Error::TotpNotFound.into())
     }
 }
 
-fn display_ciphers(crypt: &BwCrypt, ciphers: &[BwCipher]) -> Result<()> {
+fn display_ciphers(session: &BwSession, ciphers: &[BwCipher]) -> Result<()> {
     let mut cipher_table = Vec::new();
 
     for c in ciphers {
-        let totp = get_totp(crypt, c).unwrap_or_default();
+        let totp = get_totp(session, c).unwrap_or_default();
 
-        let name: String = crypt.decrypt(&c.name)?.try_into()?;
+        let name: String = session.decrypt(&c.name)?.try_into()?;
 
         let table_entry = CipherTable {
             id: &c.id,
@@ -67,13 +67,11 @@ pub async fn command_ciphers() -> Result<()> {
 
     let session = agent.load_session().await?;
 
-    let crypt = BwCrypt::from_encoded_key(session.key)?;
-
     let api = BwApi::new(&session.email, &session.server_url)?;
 
     let ciphers = api.ciphers(&session.auth).await?;
 
-    display_ciphers(&crypt, &ciphers)
+    display_ciphers(&session, &ciphers)
 }
 
 pub async fn command_cipher<I>(id: I) -> Result<()>
@@ -88,11 +86,9 @@ where
 
     let session = agent.load_session().await?;
 
-    let crypt = BwCrypt::from_encoded_key(session.key)?;
-
     let api = BwApi::new(&session.email, &session.server_url)?;
 
     let cipher = api.cipher(&session.auth, id.as_ref()).await?;
 
-    display_ciphers(&crypt, &[cipher])
+    display_ciphers(&session, &[cipher])
 }

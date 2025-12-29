@@ -1,7 +1,7 @@
 use crate::commands::auth::login_from_cache;
 use anyhow::{Result, bail};
 use tokio::io::{AsyncWriteExt, stdout};
-use ubitwarden::{api::BwApi, api_types::BwCipherData, crypto::BwCrypt, error::Error};
+use ubitwarden::{api::BwApi, api_types::BwCipherData, error::Error};
 use ubitwarden_agent::agent::UBWAgent;
 
 pub async fn command_totp<I>(id: I) -> Result<()>
@@ -16,8 +16,6 @@ where
 
     let session = agent.load_session().await?;
 
-    let crypt = BwCrypt::from_encoded_key(session.key)?;
-
     let api = BwApi::new(&session.email, &session.server_url)?;
 
     let cipher = api.login(&session.auth, id.as_ref()).await?;
@@ -25,7 +23,7 @@ where
     if let BwCipherData::Login(login) = cipher.data
         && let Some(encrypted_totp) = login.totp
     {
-        let totp = crypt.parse_totp(encrypted_totp)?;
+        let totp = session.parse_totp(encrypted_totp)?;
         println!("totp: {totp}");
     }
 
@@ -44,15 +42,13 @@ where
 
     let session = agent.load_session().await?;
 
-    let crypt = BwCrypt::from_encoded_key(session.key)?;
-
     let api = BwApi::new(&session.email, &session.server_url)?;
 
     let cipher = api.cipher(&session.auth, id.as_ref()).await?;
 
     if let BwCipherData::Login(login) = cipher.data {
         if let Some(encrypted_password) = login.password {
-            let pass: String = crypt.decrypt(&encrypted_password)?.try_into()?;
+            let pass: String = session.decrypt(&encrypted_password)?.try_into()?;
             // can't safely use the println! macro
             stdout().write_all(pass.as_bytes()).await?;
             stdout().flush().await?;
