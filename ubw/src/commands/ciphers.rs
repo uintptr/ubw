@@ -6,8 +6,10 @@ use ubitwarden::{
     crypto::BwCrypt,
     error::Error,
 };
+use ubitwarden_agent::agent::UBWAgent;
 
-use crate::commands::{agent::utils::load_session, auth::login_from_cache};
+use crate::commands::auth::login_from_cache;
+use log::error;
 
 #[derive(Tabled)]
 struct CipherTable<'a> {
@@ -55,11 +57,15 @@ fn display_ciphers(crypt: &BwCrypt, ciphers: &[BwCipher]) -> Result<()> {
 }
 
 pub async fn command_ciphers() -> Result<()> {
-    if let Err(e) = login_from_cache().await {
-        bail!("Not logged in ({e})");
-    }
+    let mut agent = match login_from_cache().await {
+        Ok(v) => v,
+        Err(e) => {
+            error!("not logged in");
+            return Err(e);
+        }
+    };
 
-    let session = load_session().await?;
+    let session = agent.load_session().await?;
 
     let crypt = BwCrypt::from_encoded_key(session.key)?;
 
@@ -78,7 +84,9 @@ where
         bail!("Not logged in ({e})");
     }
 
-    let session = load_session().await?;
+    let mut agent = UBWAgent::new().await?;
+
+    let session = agent.load_session().await?;
 
     let crypt = BwCrypt::from_encoded_key(session.key)?;
 

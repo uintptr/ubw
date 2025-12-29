@@ -17,10 +17,9 @@ use ubitwarden::api_types::{BwCipherData, BwSshKey};
 use ubitwarden::{api::BwApi, crypto::BwCrypt};
 
 use log::{error, info, warn};
+use ubitwarden_agent::agent::UBWAgent;
 
 use crate::common_const::UBW_DATA_DIR;
-
-use super::utils::load_session;
 
 const SOCK_PREFIX: &str = env!("CARGO_PKG_NAME");
 
@@ -140,8 +139,10 @@ impl BwSshAgent {
 }
 
 async fn get_remote_keys() -> Result<(BwCrypt, Vec<BwSshKey>)> {
+    let mut agent = UBWAgent::new().await?;
+
     // Load session and fetch ciphers from Bitwarden
-    let session = load_session().await?;
+    let session = agent.load_session().await?;
 
     let crypt = BwCrypt::from_encoded_key(&session.key)?;
 

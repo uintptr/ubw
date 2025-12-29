@@ -1,7 +1,8 @@
-use crate::commands::{agent::utils::load_session, auth::login_from_cache};
+use crate::commands::auth::login_from_cache;
 use anyhow::{Result, bail};
 use tokio::io::{AsyncWriteExt, stdout};
 use ubitwarden::{api::BwApi, api_types::BwCipherData, crypto::BwCrypt, error::Error};
+use ubitwarden_agent::agent::UBWAgent;
 
 pub async fn command_totp<I>(id: I) -> Result<()>
 where
@@ -11,7 +12,9 @@ where
         bail!("Not logged in ({e})");
     }
 
-    let session = load_session().await?;
+    let mut agent = UBWAgent::new().await?;
+
+    let session = agent.load_session().await?;
 
     let crypt = BwCrypt::from_encoded_key(session.key)?;
 
@@ -37,7 +40,9 @@ where
         bail!("Not logged in ({e})");
     }
 
-    let session = load_session().await?;
+    let mut agent = UBWAgent::new().await?;
+
+    let session = agent.load_session().await?;
 
     let crypt = BwCrypt::from_encoded_key(session.key)?;
 

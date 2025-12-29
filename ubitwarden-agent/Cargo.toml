@@ -1,0 +1,15 @@
+[package]
+name = "ubitwarden-agent"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+ubitwarden = { path = "../ubitwarden" }
+whoami.workspace = true
+
+[lints]
+workspace = true

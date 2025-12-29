@@ -3,15 +3,14 @@ use std::{collections::HashMap, os::unix::io::AsRawFd};
 use anyhow::Result;
 use clap::Args;
 use log::{error, info, warn};
-use tokio::io::AsyncWriteExt;
 use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
     select,
     sync::watch::Receiver,
 };
 use ubitwarden::error::Error;
-
-use crate::commands::agent::utils::{create_socket_name, read_string, write_string};
+use ubitwarden_agent::agent::UBWAgent;
 
 #[derive(Args)]
 pub struct CacheArgs {
@@ -53,11 +52,37 @@ fn get_peer_pid(client: &UnixStream) -> Result<u32> {
     }
 }
 
+async fn read_string(stream: &mut UnixStream) -> Result<String> {
+    let len = stream.read_i32().await?;
+    let len: usize = len.try_into()?;
+
+    let mut buf = vec![0u8; len];
+
+    stream.read_exact(&mut buf).await?;
+
+    let s = String::from_utf8(buf)?;
+
+    Ok(s)
+}
+
+async fn write_string<S>(stream: &mut UnixStream, input: S) -> Result<()>
+where
+    S: AsRef<str>,
+{
+    let len = input.as_ref().len();
+    let len: i32 = len.try_into()?;
+
+    stream.write_i32(len).await?;
+    stream.write_all(input.as_ref().as_bytes()).await?;
+
+    Ok(())
+}
+
 impl CacheServer {
     pub fn new() -> Result<Self> {
         info!("binding unix socket");
 
-        let socket_name = create_socket_name();
+        let socket_name = UBWAgent::create_socket_name();
         let listener = UnixListener::bind(socket_name)?;
 
         let self_uid = nix::unistd::getuid().as_raw();
@@ -77,35 +102,45 @@ impl CacheServer {
         Ok(self.self_uid == client_uid)
     }
 
+    fn parse_command_write(&mut self, kv: &str) -> Result<ServerResponse> {
+        let comp: Vec<&str> = kv.splitn(2, ':').collect();
+
+        if 2 == comp.len() {
+            let key = comp.first().ok_or(Error::CommandEmptyKey)?.to_string();
+            let val = comp.get(1).ok_or(Error::CommandEmptyValue)?.to_string();
+
+            info!("writing {key}");
+
+            self.storage.insert(key, val);
+            Ok(ServerResponse::Empty)
+        } else {
+            error!("invalid command format write");
+            Err(Error::InvalidCommandFormat.into())
+        }
+    }
+
+    fn parse_command_read(&self, key: &str) -> ServerResponse {
+        info!("reading {key}");
+
+        match self.storage.get(key) {
+            Some(v) => ServerResponse::String(v.clone()),
+            None => ServerResponse::String(String::new()),
+        }
+    }
+
+    fn parse_command_delete(&mut self, key: &str) -> ServerResponse {
+        info!("deleting {key}");
+        self.storage.remove(key);
+        ServerResponse::Empty
+    }
+
     fn parse_command(&mut self, command: &str) -> Result<ServerResponse> {
         if let Some(kv) = command.strip_prefix("write:") {
-            let comp: Vec<&str> = kv.splitn(2, ':').collect();
-
-            if 2 == comp.len() {
-                let key = comp.first().ok_or(Error::CommandEmptyKey)?.to_string();
-                let val = comp.get(1).ok_or(Error::CommandEmptyValue)?.to_string();
-
-                info!("writing {key}");
-
-                self.storage.insert(key, val);
-                Ok(ServerResponse::Empty)
-            } else {
-                error!("invalid command format {command}");
-                Err(Error::InvalidCommandFormat.into())
-            }
+            self.parse_command_write(kv)
         } else if let Some(key) = command.strip_prefix("read:") {
-            info!("reading {key}");
-
-            match self.storage.get(key) {
-                Some(v) => Ok(ServerResponse::String(v.clone())),
-                None => Ok(ServerResponse::Empty),
-            }
+            Ok(self.parse_command_read(key))
         } else if let Some(key) = command.strip_prefix("delete:") {
-            info!("deleting {key}");
-            self.storage.remove(key);
-            Ok(ServerResponse::Empty)
-        } else if command.eq("ping") {
-            Ok(ServerResponse::Empty)
+            Ok(self.parse_command_delete(key))
         } else if command.eq("stop") {
             warn!("asked to stop");
             Ok(ServerResponse::Quit)
@@ -125,17 +160,20 @@ impl CacheServer {
             return Err(Error::ClientVerificationFailure.into());
         }
 
-        let command = read_string(&mut client).await?;
+        loop {
+            info!("waiting for client data");
 
-        let response = self.parse_command(&command)?;
+            let command = read_string(&mut client).await?;
 
-        match response {
-            ServerResponse::Quit => Err(Error::EndOfFile.into()),
-            ServerResponse::Empty => Ok(()),
-            ServerResponse::String(s) => {
-                write_string(&mut client, s).await?;
-                client.flush().await?;
-                Ok(())
+            let response = self.parse_command(&command)?;
+
+            match response {
+                ServerResponse::Quit => break Err(Error::EndOfFile.into()),
+                ServerResponse::Empty => {}
+                ServerResponse::String(s) => {
+                    write_string(&mut client, s).await?;
+                    client.flush().await?;
+                }
             }
         }
     }
@@ -157,6 +195,8 @@ impl CacheServer {
                     };
 
                     let client_ret = self.client_handler(client).await;
+
+                    warn!("client disconnected");
 
                     match client_ret {
                         Ok(()) => {},

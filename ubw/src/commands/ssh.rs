@@ -4,8 +4,9 @@ use ubitwarden::{
     api_types::{BwCipher, BwCipherData},
     crypto::BwCrypt,
 };
+use ubitwarden_agent::agent::UBWAgent;
 
-use crate::commands::{agent::utils::load_session, auth::login_from_cache};
+use crate::commands::auth::login_from_cache;
 
 fn display_ssh_keys(crypt: &BwCrypt, keys: &[BwCipher]) -> Result<()> {
     for c in keys {
@@ -24,7 +25,9 @@ pub async fn command_ssh_keys() -> Result<()> {
         bail!("Not logged in ({e})");
     }
 
-    let session = load_session().await?;
+    let mut agent = UBWAgent::new().await?;
+
+    let session = agent.load_session().await?;
 
     let crypt = BwCrypt::from_encoded_key(session.key)?;
 

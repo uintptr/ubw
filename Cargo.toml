@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["ubitwarden", "ubw"]
+members = ["ubitwarden", "ubitwarden-agent", "ubw"]
 
 [workspace.package]
 version = "0.0.22"

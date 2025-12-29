@@ -3072,6 +3072,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ubitwarden-agent"
+version = "0.0.22"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "ubitwarden",
+ "whoami",
+]
+
+[[package]]
 name = "ubw"
 version = "0.0.22"
 dependencies = [
@@ -3094,7 +3106,7 @@ dependencies = [
  "tabled",
  "tokio",
  "ubitwarden",
- "whoami",
+ "ubitwarden-agent",
 ]
 
 [[package]]

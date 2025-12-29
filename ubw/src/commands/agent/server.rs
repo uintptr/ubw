@@ -10,8 +10,8 @@ use tokio::{
     sync::watch::{self},
     time::sleep,
 };
+use ubitwarden_agent::agent::UBWAgent;
 
-use crate::commands::agent::utils::{ping_agent, stop_agent};
 use crate::commands::agent::{credentials::CacheServer, ssh::SshAgentServer};
 
 const SPAWN_WAIT_TIMEOUT: usize = 5;
@@ -101,7 +101,7 @@ async fn cache_server() -> Result<()> {
 // PUBLIC
 ////////////////////////////////////////////////////////////////////////////////
 
-pub async fn spawn_server() -> Result<()> {
+pub async fn spawn_server() -> Result<UBWAgent> {
     let self_exe = env::current_exe()?;
 
     info!("spawning {}", self_exe.display());
@@ -112,10 +112,9 @@ pub async fn spawn_server() -> Result<()> {
     // wait until we can ping it
     //
     for i in 0..SPAWN_WAIT_TIMEOUT {
-        if ping_agent().await.is_ok() {
-            return Ok(());
+        if let Ok(a) = UBWAgent::new().await {
+            return Ok(a);
         }
-
         info!("server is not ready...{i}/{SPAWN_WAIT_TIMEOUT}");
         sleep(Duration::from_secs(1)).await;
     }
@@ -124,36 +123,45 @@ pub async fn spawn_server() -> Result<()> {
 }
 
 pub async fn command_agent(args: AgentArgs) -> Result<()> {
-    let running = ping_agent().await.is_ok();
+    match UBWAgent::new().await {
+        Ok(mut v) => {
+            //
+            // server is running
+            //
+            if args.stop {
+                warn!("stopping the server");
+                v.stop().await?;
 
-    match (args.stop, running) {
-        (true, true) => {
-            warn!("stopping the server");
-            stop_agent().await?;
-
-            // Wait until ping fails
-            for _ in 0..5 {
-                if ping_agent().await.is_err() {
-                    info!("server stopped");
-                    return Ok(());
+                // Wait until ping fails
+                for _ in 0..5 {
+                    if UBWAgent::new().await.is_err() {
+                        info!("server stopped");
+                        return Ok(());
+                    }
+                    sleep(Duration::from_secs(1)).await;
                 }
-                sleep(Duration::from_secs(1)).await;
-            }
 
-            bail!("Unable to stop server");
-        }
-        (true, false) => Ok(()),
-        (false, false) => {
-            info!("starting the server");
-            //
-            // this blocks!
-            //
-            cache_server().await?;
+                bail!("Unable to stop server");
+            }
             Ok(())
         }
-        (false, true) => {
-            info!("already running");
-            Ok(())
+        Err(_) => {
+            //
+            // server is NOT running
+            //
+            if args.stop {
+                // nothing to do
+                info!("server is not running");
+                Ok(())
+            } else {
+                // start the server
+                info!("starting the server");
+                //
+                // this blocks!
+                //
+                cache_server().await?;
+                Ok(())
+            }
         }
     }
 }

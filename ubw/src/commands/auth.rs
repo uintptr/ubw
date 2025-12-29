@@ -4,19 +4,14 @@ use clap::Args;
 
 use anyhow::{Result, anyhow, bail};
 use dialoguer::Password;
-use log::{error, info, warn};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use ubitwarden::{api::BwApi, api_types::BwCipherData, crypto::BwCrypt};
+use ubitwarden_agent::agent::UBWAgent;
 
 use crate::{
     banner::display_banner,
-    commands::agent::{
-        server::spawn_server,
-        utils::{
-            delete_credentials, delete_session, fetch_credentials, fetch_session, load_session, ping_agent,
-            store_credentials,
-        },
-    },
+    commands::agent::server::spawn_server,
     common_const::{UBW_APP_NAME, UBW_APP_VERSION, UBW_CONFIG_DIR},
 };
 
@@ -153,22 +148,24 @@ where
     Ok(password)
 }
 
-pub async fn login_from_cache() -> Result<()> {
-    if let Err(e) = ping_agent().await {
-        error!("{e}");
+pub async fn login_from_cache() -> Result<UBWAgent> {
+    let mut agent = if let Ok(v) = UBWAgent::new().await {
+        v
+    } else {
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;
-    }
+        UBWAgent::new().await?
+    };
 
     let cache = LoginConfigData::from_file()?;
 
-    if fetch_credentials().await.is_err() {
+    if agent.fetch_credentials().await.is_err() {
         let password = ask_password(&cache.email, &cache.server_url).await?;
-        store_credentials(&cache.email, &cache.server_url, password).await?;
+        agent.store_credentials(&cache.email, &cache.server_url, password).await?;
         LoginConfigData::new(&cache.email, &cache.server_url).sync()?;
     }
 
-    Ok(())
+    Ok(agent)
 }
 
 pub async fn command_logins() -> Result<()> {
@@ -176,7 +173,9 @@ pub async fn command_logins() -> Result<()> {
         bail!("Not logged in ({e})");
     }
 
-    let session = load_session().await?;
+    let mut agent = UBWAgent::new().await?;
+
+    let session = agent.load_session().await?;
 
     let crypt = BwCrypt::from_encoded_key(session.key)?;
 
@@ -197,18 +196,22 @@ pub async fn command_logins() -> Result<()> {
 }
 
 pub async fn command_auth(args: AuthArgs) -> Result<()> {
-    if let Err(e) = ping_agent().await {
-        warn!("{e}");
+    let mut agent = if let Ok(v) = UBWAgent::new().await {
+        v
+    } else {
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;
-    } else if !args.force {
+        UBWAgent::new().await?
+    };
+
+    if !args.force {
         //
         // unless force is specifed, we'll check that the server have creds
         // and bail if it does.
         //
         // This way "ubw login" can be used multiple times without prompting
         //
-        if fetch_credentials().await.is_ok() {
+        if agent.fetch_credentials().await.is_ok() {
             info!("already authenticated");
             return Ok(());
         }
@@ -232,36 +235,40 @@ pub async fn command_auth(args: AuthArgs) -> Result<()> {
         bail!("missing server url");
     };
 
+    info!("using {email} {server_url}");
+
     let password = ask_password(&email, &server_url).await?;
-    store_credentials(email, server_url, password).await?;
-    fetch_credentials().await?;
+
+    info!("storing password");
+    agent.store_credentials(email, server_url, password).await?;
+    agent.fetch_credentials().await?;
 
     LoginConfigData::new(email, server_url).sync()
 }
 
 pub async fn command_logout() -> Result<()> {
-    if ping_agent().await.is_err() {
+    let Ok(mut agent) = UBWAgent::new().await else {
         //
         // not running nothing to do
         //
         info!("not running, nothing to do");
         return Ok(());
-    }
+    };
 
-    if fetch_credentials().await.is_ok() {
+    if agent.fetch_credentials().await.is_ok() {
         info!("deleting credentials");
-        if let Err(e) = delete_credentials().await {
+        if let Err(e) = agent.delete_credentials().await {
             error!("unable to delete session ({e})");
-            return Err(e);
+            return Err(e.into());
         }
     }
 
-    if fetch_session().await.is_ok() {
+    if agent.fetch_session().await.is_ok() {
         info!("deleting session");
 
-        if let Err(e) = delete_session().await {
+        if let Err(e) = agent.delete_session().await {
             error!("unable to delete session ({e})");
-            return Err(e);
+            return Err(e.into());
         }
     }
 

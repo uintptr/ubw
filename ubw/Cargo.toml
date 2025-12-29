@@ -27,7 +27,7 @@ ssh-agent-lib.workspace = true
 tabled.workspace = true
 tokio.workspace = true
 ubitwarden = { path = "../ubitwarden" }
-whoami.workspace = true
+ubitwarden-agent = { path = "../ubitwarden-agent" }
 
 [lints]
 workspace = true
