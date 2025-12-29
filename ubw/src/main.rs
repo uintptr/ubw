@@ -4,7 +4,7 @@ use clap::{Args, Parser, Subcommand};
 
 use anyhow::{Result, anyhow};
 use daemonize::Daemonize;
-use log::{LevelFilter, error, info};
+use log::{LevelFilter, error};
 use rstaples::logging::StaplesLogger;
 
 use ubw::{
@@ -76,8 +76,6 @@ async fn tokio_entry(args: UserArgs) -> Result<()> {
 }
 
 fn daemonize() -> Result<()> {
-    info!("daemonizing");
-
     let home_dir = dirs::home_dir().ok_or(anyhow!("unable to find home dir"))?;
 
     let data_dir = dirs::data_dir().ok_or(anyhow!("unable to find data-dir"))?;

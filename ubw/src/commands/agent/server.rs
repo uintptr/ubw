@@ -12,7 +12,10 @@ use tokio::{
 };
 use ubitwarden_agent::agent::UBWAgent;
 
-use crate::commands::agent::{credentials::CacheServer, ssh::SshAgentServer};
+use crate::{
+    commands::agent::{credentials::CacheServer, ssh::SshAgentServer},
+    common_const::UBW_APP_VERSION,
+};
 
 const SPAWN_WAIT_TIMEOUT: usize = 5;
 
@@ -155,7 +158,8 @@ pub async fn command_agent(args: AgentArgs) -> Result<()> {
                 Ok(())
             } else {
                 // start the server
-                info!("starting the server");
+                info!("{}", "-".repeat(80));
+                info!("starting the server version {UBW_APP_VERSION}");
                 //
                 // this blocks!
                 //
