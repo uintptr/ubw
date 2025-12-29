@@ -12,7 +12,10 @@ use crate::{
     banner::display_banner,
     commands::agent::{
         server::spawn_server,
-        utils::{fetch_credentials, load_session, ping_agent, store_credentials},
+        utils::{
+            delete_credentials, delete_session, fetch_credentials, fetch_session, load_session, ping_agent,
+            store_credentials,
+        },
     },
 };
 
@@ -235,4 +238,33 @@ pub async fn command_auth(args: AuthArgs) -> Result<()> {
     fetch_credentials().await?;
 
     LoginConfigData::new(email, server_url).sync()
+}
+
+pub async fn command_logout() -> Result<()> {
+    if ping_agent().await.is_err() {
+        //
+        // not running nothing to do
+        //
+        info!("not running, nothing to do");
+        return Ok(());
+    }
+
+    if fetch_credentials().await.is_ok() {
+        info!("deleting credentials");
+        if let Err(e) = delete_credentials().await {
+            error!("unable to delete session ({e})");
+            return Err(e);
+        }
+    }
+
+    if fetch_session().await.is_ok() {
+        info!("deleting session");
+
+        if let Err(e) = delete_session().await {
+            error!("unable to delete session ({e})");
+            return Err(e);
+        }
+    }
+
+    Ok(())
 }

@@ -100,6 +100,10 @@ impl CacheServer {
                 Some(v) => Ok(ServerResponse::String(v.clone())),
                 None => Ok(ServerResponse::Empty),
             }
+        } else if let Some(key) = command.strip_prefix("delete:") {
+            info!("deleting {key}");
+            self.storage.remove(key);
+            Ok(ServerResponse::Empty)
         } else if command.eq("ping") {
             Ok(ServerResponse::Empty)
         } else if command.eq("stop") {

@@ -62,7 +62,6 @@ where
     let len: i32 = len.try_into()?;
 
     stream.write_i32(len).await?;
-
     stream.write_all(input.as_ref().as_bytes()).await?;
 
     Ok(())
@@ -99,7 +98,13 @@ where
     fetch_data(key.as_ref()).await
 }
 
-async fn fetch_session() -> Result<BwSession> {
+pub async fn delete_session() -> Result<()> {
+    let socket_name = create_socket_name();
+    let mut stream = UnixStream::connect(socket_name).await?;
+    write_string(&mut stream, "delete:session").await
+}
+
+pub async fn fetch_session() -> Result<BwSession> {
     let data = fetch_user_data("session").await?;
     let session: BwSession = serde_json::from_str(&data)?;
     Ok(session)
@@ -109,6 +114,12 @@ async fn store_session(session: &BwSession) -> Result<()> {
     let encoded_session = serde_json::to_string(session)?;
     store_user_data("session", encoded_session).await?;
     Ok(())
+}
+
+pub async fn delete_credentials() -> Result<()> {
+    let socket_name = create_socket_name();
+    let mut stream = UnixStream::connect(socket_name).await?;
+    write_string(&mut stream, "delete:credentials").await
 }
 
 pub async fn fetch_credentials() -> Result<BwCredentials> {
