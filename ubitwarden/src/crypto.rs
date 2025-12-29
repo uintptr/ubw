@@ -174,4 +174,9 @@ impl BwCrypt {
             }
         }
     }
+
+    #[must_use]
+    pub fn export(&self) -> String {
+        String::from(self.symmetric_key.to_base64())
+    }
 }

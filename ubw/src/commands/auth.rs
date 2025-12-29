@@ -144,8 +144,7 @@ where
     E: AsRef<str>,
     U: AsRef<str>,
 {
-    let password = ask_password_loop(email, server_url).await?;
-    Ok(password)
+    ask_password_loop(email, server_url).await
 }
 
 pub async fn login_from_cache() -> Result<UBWAgent> {
