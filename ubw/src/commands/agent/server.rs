@@ -1,4 +1,4 @@
-use std::{env, process::Stdio, time::Duration};
+use std::{env, time::Duration};
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -21,6 +21,10 @@ pub struct AgentArgs {
     /// server url
     #[arg(short, long)]
     pub stop: bool,
+
+    /// stay in the foreground
+    #[arg(short, long)]
+    pub foreground: bool,
 }
 
 async fn signal_handlers() -> Result<()> {
@@ -34,10 +38,11 @@ async fn signal_handlers() -> Result<()> {
                 info!("ignoring SIGHUP");
             }
             _ = sigint.recv() => {
-                info!("ignoring SIGINT");
+                info!("received SIGINT. We're leaving");
+                break Ok(())
             }
             _ = sigterm.recv() => {
-                info!("received SIGTERM. we're leaving");
+                info!("received SIGTERM. We're leaving");
                 break Ok(())
             }
         }
@@ -101,12 +106,7 @@ pub async fn spawn_server() -> Result<()> {
 
     info!("spawning {}", self_exe.display());
 
-    Command::new(self_exe)
-        .arg("agent")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
+    Command::new(self_exe).arg("-v").arg("agent").spawn()?;
 
     //
     // wait until we can ping it

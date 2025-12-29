@@ -18,8 +18,9 @@ use ubitwarden::{api::BwApi, crypto::BwCrypt};
 
 use log::{error, info, warn};
 
+use crate::common_const::UBW_DATA_DIR;
+
 use super::utils::load_session;
-const DATA_DIR: &str = env!("CARGO_PKG_NAME");
 const SOCK_PREFIX: &str = env!("CARGO_PKG_NAME");
 
 #[derive(Clone)]
@@ -317,7 +318,7 @@ impl SshAgentServer {
 
     pub async fn accept_loop(&self, mut quit_rx: Receiver<bool>) -> Result<()> {
         let data_dir = dirs::data_dir().ok_or(anyhow!("unable to find data-dir"))?;
-        let data_dir = data_dir.join(DATA_DIR);
+        let data_dir = data_dir.join(UBW_DATA_DIR);
 
         // create data dir if it doesn't exist
         if !data_dir.exists() {
