@@ -10,7 +10,6 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-crossterm.workspace = true
 daemonize.workspace = true
 dialoguer.workspace = true
 dirs.workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "ubw-wayland"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "ubw-wayland"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+zbus = "5.2"
+tokio.workspace = true
+futures-util = "0.3"
+
+[lints]
+workspace = true
