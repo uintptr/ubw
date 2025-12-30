@@ -23,6 +23,30 @@ struct Monitor {
 
 const DOT_RADIUS: i16 = 30; // Much larger dots
 const DOT_SPACING: i16 = 70;
+const TEXT_OFFSET: i16 = 80; // Distance above the dots to draw text
+
+fn draw_prompt_text(conn: &RustConnection, drawable: u32, gc: u32, monitors: &[Monitor], text: &str) -> Result<()> {
+    if text.is_empty() {
+        return Ok(());
+    }
+
+    let text_bytes = text.as_bytes();
+
+    for monitor in monitors {
+        let center_x = monitor.x.saturating_add(i16::try_from(monitor.width / 2)?);
+        let center_y = monitor.y.saturating_add(i16::try_from(monitor.height / 2)?);
+
+        // Estimate text width (rough approximation: 20 pixels per character for large font)
+        let text_width = i16::try_from(text_bytes.len())?.saturating_mul(20);
+        let text_x = center_x.saturating_sub(text_width / 2);
+        let text_y = center_y.saturating_sub(TEXT_OFFSET);
+
+        conn.image_text8(drawable, gc, text_x, text_y, text_bytes)?;
+    }
+
+    conn.flush()?;
+    Ok(())
+}
 
 fn draw_password_dots(
     conn: &RustConnection,
@@ -104,7 +128,7 @@ fn detect_monitors(conn: &impl Connection, root: u32) -> Result<Vec<Monitor>> {
     }])
 }
 
-async fn read_password() -> Result<Vec<u8>> {
+async fn read_password(prompt: &str) -> Result<Vec<u8>> {
     let mut buf = [0u8; 1];
     let mut chars = Vec::new();
 
@@ -149,11 +173,36 @@ async fn read_password() -> Result<Vec<u8>> {
         info!("Monitor {}: {}x{} at ({}, {})", i, mon.width, mon.height, mon.x, mon.y);
     }
 
+    // Try to load a larger font - try common font names
+    let font = conn.generate_id()?;
+    let font_names = [
+        b"-*-*-bold-r-*-*-34-*-*-*-*-*-*-*" as &[u8],
+        b"-*-*-*-*-*-*-34-*-*-*-*-*-*-*",
+        b"-*-*-bold-r-*-*-24-*-*-*-*-*-*-*",
+        b"10x20",
+        b"9x15",
+        b"fixed",
+    ];
+
+    let mut font_loaded = false;
+    for font_name in &font_names {
+        if conn.open_font(font, font_name).is_ok() {
+            info!("Loaded font: {:?}", std::str::from_utf8(font_name).unwrap_or("unknown"));
+            font_loaded = true;
+            break;
+        }
+    }
+
     // Create graphics context with green color for visibility
     let gc = conn.generate_id()?;
-    let gc_aux = CreateGCAux::new()
+    let mut gc_aux = CreateGCAux::new()
         .foreground(0x0000_FF00) // Green color
         .graphics_exposures(0);
+
+    if font_loaded {
+        gc_aux = gc_aux.font(font);
+    }
+
     conn.create_gc(gc, drawable, &gc_aux)?;
 
     info!("Created GC with green foreground");
@@ -164,6 +213,9 @@ async fn read_password() -> Result<Vec<u8>> {
     let config = ConfigureWindowAux::new().stack_mode(StackMode::ABOVE);
     conn.configure_window(drawable, &config)?;
     conn.flush()?;
+
+    // Draw the prompt text immediately
+    draw_prompt_text(&conn, drawable, gc, &monitors, prompt)?;
 
     loop {
         reader.read_exact(&mut buf).await?;
@@ -186,6 +238,9 @@ async fn read_password() -> Result<Vec<u8>> {
 
         // Clear the entire drawable first to remove old dots
         conn.clear_area(false, drawable, 0, 0, geometry.width, geometry.height)?;
+
+        // Draw the prompt text
+        draw_prompt_text(&conn, drawable, gc, &monitors, prompt)?;
 
         // Draw dots for each character on each monitor
         draw_password_dots(&conn, drawable, gc, &monitors, chars.len())?;
@@ -213,7 +268,9 @@ async fn store_password(args: &XSecureLockArgs, password: &str) -> Result<()> {
 }
 
 pub async fn command_xsecurelock(args: XSecureLockArgs) -> Result<()> {
-    let password_chars = read_password().await?;
+    let prompt = format!("Password for {}", args.email);
+
+    let password_chars = read_password(&prompt).await?;
 
     let password = String::from_utf8(password_chars)?;
 
