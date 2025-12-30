@@ -21,6 +21,52 @@ struct Monitor {
     height: u16,
 }
 
+const DOT_RADIUS: i16 = 30; // Much larger dots
+const DOT_SPACING: i16 = 70;
+
+fn draw_password_dots(
+    conn: &RustConnection,
+    drawable: u32,
+    gc: u32,
+    monitors: &[Monitor],
+    num_chars: usize,
+) -> Result<()> {
+    let num_dots = i16::try_from(num_chars)?;
+    let total_width = num_dots.saturating_mul(DOT_SPACING);
+
+    for (mon_idx, monitor) in monitors.iter().enumerate() {
+        let center_x = monitor.x.saturating_add(i16::try_from(monitor.width / 2)?);
+        let center_y = monitor.y.saturating_add(i16::try_from(monitor.height / 2)?);
+        let start_x = center_x.saturating_sub(total_width / 2);
+
+        info!("Monitor {mon_idx}: drawing at center ({center_x}, {center_y})");
+
+        // Draw filled rectangles (dots) instead of arcs for simplicity
+        let mut rects = Vec::new();
+        for i in 0..num_dots {
+            let x = start_x.saturating_add(i.saturating_mul(DOT_SPACING));
+            let y = center_y;
+
+            // Create filled rectangle (dot)
+            rects.push(Rectangle {
+                x: x.saturating_sub(DOT_RADIUS),
+                y: y.saturating_sub(DOT_RADIUS),
+                width: u16::try_from(DOT_RADIUS.saturating_mul(2))?,
+                height: u16::try_from(DOT_RADIUS.saturating_mul(2))?,
+            });
+        }
+
+        if !rects.is_empty() {
+            conn.poly_fill_rectangle(drawable, gc, &rects)?;
+        }
+    }
+
+    conn.flush()?;
+    info!("Flushed to display");
+
+    Ok(())
+}
+
 fn detect_monitors(conn: &impl Connection, root: u32) -> Result<Vec<Monitor>> {
     // Try to use RandR to get monitor information
     let screen_res = conn.randr_get_screen_resources(root)?.reply();
@@ -58,9 +104,6 @@ fn detect_monitors(conn: &impl Connection, root: u32) -> Result<Vec<Monitor>> {
     }])
 }
 
-const DOT_RADIUS: i16 = 30; // Much larger dots
-const DOT_SPACING: i16 = 70;
-
 async fn read_password() -> Result<Vec<u8>> {
     let mut buf = [0u8; 1];
     let mut chars = Vec::new();
@@ -69,7 +112,7 @@ async fn read_password() -> Result<Vec<u8>> {
 
     let window_id_str = env::var("XSCREENSAVER_WINDOW")?;
 
-    error!("XSCREENSAVER_WINDOW={window_id_str}");
+    info!("XSCREENSAVER_WINDOW={window_id_str}");
 
     let window_id = if window_id_str.starts_with("0x") || window_id_str.starts_with("0X") {
         u32::from_str_radix(&window_id_str[2..], 16)?
@@ -77,7 +120,7 @@ async fn read_password() -> Result<Vec<u8>> {
         window_id_str.parse()?
     };
 
-    error!("Parsed window_id={window_id}");
+    info!("Parsed window_id={window_id}");
 
     // Connect to X11
     let (conn, screen_num) = RustConnection::connect(None)?;
@@ -85,12 +128,12 @@ async fn read_password() -> Result<Vec<u8>> {
 
     // Use the window_id directly as the drawable
     let drawable = window_id;
-    error!("Using drawable={drawable} (0x{drawable:x})");
+    info!("Using drawable={drawable} (0x{drawable:x})");
 
     // Get window geometry
     let geometry = conn.get_geometry(drawable)?.reply()?;
 
-    error!(
+    info!(
         "Window geometry: {}x{} at ({}, {})",
         geometry.width, geometry.height, geometry.x, geometry.y
     );
@@ -101,9 +144,9 @@ async fn read_password() -> Result<Vec<u8>> {
 
     // Detect monitors using RandR
     let monitors = detect_monitors(&conn, screen.root)?;
-    error!("Detected {} monitors", monitors.len());
+    info!("Detected {} monitors", monitors.len());
     for (i, mon) in monitors.iter().enumerate() {
-        error!("Monitor {}: {}x{} at ({}, {})", i, mon.width, mon.height, mon.x, mon.y);
+        info!("Monitor {}: {}x{} at ({}, {})", i, mon.width, mon.height, mon.x, mon.y);
     }
 
     // Create graphics context with green color for visibility
@@ -113,7 +156,7 @@ async fn read_password() -> Result<Vec<u8>> {
         .graphics_exposures(0);
     conn.create_gc(gc, drawable, &gc_aux)?;
 
-    error!("Created GC with green foreground");
+    info!("Created GC with green foreground");
 
     // Map and raise the window to ensure it's visible
     conn.map_window(drawable)?;
@@ -139,44 +182,13 @@ async fn read_password() -> Result<Vec<u8>> {
             chars.push(buf[0]);
         }
 
-        error!("Drawing {} dots on {} monitors", chars.len(), monitors.len());
+        info!("Drawing {} dots on {} monitors", chars.len(), monitors.len());
 
         // Clear the entire drawable first to remove old dots
         conn.clear_area(false, drawable, 0, 0, geometry.width, geometry.height)?;
 
         // Draw dots for each character on each monitor
-        let num_dots = i16::try_from(chars.len())?;
-        let total_width = num_dots.saturating_mul(DOT_SPACING);
-
-        for (mon_idx, monitor) in monitors.iter().enumerate() {
-            let center_x = monitor.x.saturating_add(i16::try_from(monitor.width / 2)?);
-            let center_y = monitor.y.saturating_add(i16::try_from(monitor.height / 2)?);
-            let start_x = center_x.saturating_sub(total_width / 2);
-
-            error!("Monitor {mon_idx}: drawing at center ({center_x}, {center_y})");
-
-            // Draw filled rectangles (dots) instead of arcs for simplicity
-            let mut rects = Vec::new();
-            for i in 0..num_dots {
-                let x = start_x.saturating_add(i.saturating_mul(DOT_SPACING));
-                let y = center_y;
-
-                // Create filled rectangle (dot)
-                rects.push(Rectangle {
-                    x: x.saturating_sub(DOT_RADIUS),
-                    y: y.saturating_sub(DOT_RADIUS),
-                    width: u16::try_from(DOT_RADIUS.saturating_mul(2))?,
-                    height: u16::try_from(DOT_RADIUS.saturating_mul(2))?,
-                });
-            }
-
-            if !rects.is_empty() {
-                conn.poly_fill_rectangle(drawable, gc, &rects)?;
-            }
-        }
-
-        conn.flush()?;
-        error!("Flushed to display");
+        draw_password_dots(&conn, drawable, gc, &monitors, chars.len())?;
     }
 
     // Clear the window when done
@@ -211,7 +223,10 @@ pub async fn command_xsecurelock(args: XSecureLockArgs) -> Result<()> {
 
     let api = BwApi::new(&args.email, &args.server_url)?;
 
-    api.auth(&password).await?;
+    if let Err(e) = api.auth(&password).await {
+        error!("auth failure");
+        return Err(e.into());
+    }
 
     if let Err(e) = store_password(&args, &password).await {
         error!("Unable to store password ({e})");
