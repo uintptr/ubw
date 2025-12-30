@@ -33,7 +33,7 @@ pub struct CacheServer {
 
 #[cfg(target_os = "linux")]
 fn get_peer_pid(client: &UnixStream) -> Result<u32> {
-    use os::unix::io::AsRawFd;
+    use std::os::fd::AsRawFd;
 
     let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
     let mut len = libc::socklen_t::try_from(std::mem::size_of::<libc::ucred>())?;

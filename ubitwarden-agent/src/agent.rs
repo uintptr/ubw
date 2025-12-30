@@ -1,6 +1,6 @@
-use log::{error, info, warn};
-use std::fs;
 use std::path::PathBuf;
+
+use log::{error, info, warn};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
@@ -24,14 +24,15 @@ impl UBWAgent {
 
     #[must_use]
     #[cfg(target_os = "linux")]
-    pub fn create_socket_name() -> Result<String> {
+    pub fn create_socket_name() -> Result<PathBuf> {
         let name = format!("\0ubw_{}", whoami::username());
-        Ok(name)
+        Ok(PathBuf::from(name))
     }
 
     #[must_use]
     #[cfg(not(target_os = "linux"))]
     pub fn create_socket_name() -> Result<PathBuf> {
+        use std::fs;
         use ubitwarden::error::Error;
 
         let data_dir = dirs::data_dir().ok_or(Error::BasenameError)?;

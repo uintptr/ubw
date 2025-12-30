@@ -2,6 +2,8 @@ use clap::Args;
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "linux")]
+pub use linux::command_xsecurelock;
 #[cfg(not(target_os = "linux"))]
 mod noop;
 #[cfg(not(target_os = "linux"))]

@@ -3134,7 +3134,7 @@ checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
 name = "ubitwarden"
-version = "0.0.29"
+version = "0.0.30"
 dependencies = [
  "bitwarden-crypto",
  "bitwarden-encoding",
@@ -3153,7 +3153,7 @@ dependencies = [
 
 [[package]]
 name = "ubitwarden-agent"
-version = "0.0.29"
+version = "0.0.30"
 dependencies = [
  "dirs",
  "log",
@@ -3166,7 +3166,7 @@ dependencies = [
 
 [[package]]
 name = "ubw"
-version = "0.0.29"
+version = "0.0.30"
 dependencies = [
  "anyhow",
  "clap",

@@ -1,4 +1,3 @@
-use clap::Args;
 use std::env;
 use ubitwarden::api::BwApi;
 use ubitwarden_agent::agent::UBWAgent;
@@ -12,6 +11,7 @@ use x11rb::protocol::xproto::{ConfigureWindowAux, ConnectionExt, CreateGCAux, Re
 use x11rb::rust_connection::RustConnection;
 
 use crate::commands::agent::server::spawn_server;
+use crate::commands::xss::XSecureLockArgs;
 
 #[derive(Debug, Clone)]
 struct Monitor {
