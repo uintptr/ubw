@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs};
+use std::fs;
 
 use anyhow::Result;
 use clap::Args;
@@ -11,6 +11,8 @@ use tokio::{
 };
 use ubitwarden::error::Error;
 use ubitwarden_agent::agent::UBWAgent;
+
+use crate::commands::agent::storage::CredStorage;
 
 #[derive(Args)]
 pub struct CacheArgs {
@@ -28,7 +30,7 @@ enum ServerResponse {
 pub struct CacheServer {
     listener: UnixListener,
     self_uid: u32,
-    storage: HashMap<String, String>,
+    storage: CredStorage,
 }
 
 #[cfg(target_os = "linux")]
@@ -95,7 +97,7 @@ impl CacheServer {
 
         let self_uid = nix::unistd::getuid().as_raw();
 
-        let storage = HashMap::new();
+        let storage = CredStorage::new();
 
         Ok(Self {
             listener,
@@ -127,7 +129,7 @@ impl CacheServer {
 
             info!("writing {key}");
 
-            self.storage.insert(key, val);
+            self.storage.add(key, val);
             Ok(ServerResponse::Empty)
         } else {
             error!("invalid command format write");
