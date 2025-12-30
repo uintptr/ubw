@@ -3,7 +3,7 @@ resolver = "2"
 members = ["ubitwarden", "ubitwarden-agent", "ubw"]
 
 [workspace.package]
-version = "0.0.26"
+version = "0.0.27"
 edition = "2024"
 
 [workspace.dependencies]
@@ -12,6 +12,7 @@ base64 = "0.22"
 bitwarden-crypto = "2.0"
 bitwarden-encoding = "2.0"
 clap = { version = "4.5", features = ["derive"] }
+crossterm = "0.29"
 daemonize = "0.5"
 derive_more = { version = "2.1", features = ["display"] }
 dialoguer = "0.12"
@@ -38,6 +39,7 @@ thiserror = "2.0"
 tokio = { version = "1.48", features = ["full"] }
 totp-rs = { version = "5.7", features = ["otpauth"] }
 whoami = "1"
+x11rb = { version = "0.13", features = ["allow-unsafe-code", "randr"] }
 
 [workspace.lints.clippy]
 arithmetic_side_effects = "warn"

@@ -14,6 +14,7 @@ use ubw::{
         ciphers::{command_cipher, command_ciphers},
         login::{command_password, command_totp},
         ssh::command_ssh_keys,
+        xsecurelock::{XSecureLockArgs, command_xsecurelock},
     },
     common_const::UBW_DATA_DIR,
 };
@@ -45,6 +46,8 @@ pub enum Commands {
     Logins,
     /// Logout
     Logout,
+    /// xsecurelock
+    XSecureLock(XSecureLockArgs),
 }
 
 #[derive(Parser)]
@@ -72,6 +75,7 @@ async fn tokio_entry(args: UserArgs) -> Result<()> {
         Commands::SshKeys => command_ssh_keys().await,
         Commands::Logins => command_logins().await,
         Commands::Logout => command_logout().await,
+        Commands::XSecureLock(xss) => command_xsecurelock(xss).await,
     }
 }
 

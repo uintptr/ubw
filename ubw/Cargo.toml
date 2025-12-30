@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+crossterm.workspace = true
 daemonize.workspace = true
 dialoguer.workspace = true
 dirs.workspace = true
@@ -28,6 +29,7 @@ tabled.workspace = true
 tokio.workspace = true
 ubitwarden = { path = "../ubitwarden" }
 ubitwarden-agent = { path = "../ubitwarden-agent" }
+x11rb.workspace = true
 
 [lints]
 workspace = true
