@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use log::{error, info, warn};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 
 use crate::{api_types::BwAuth, credentials::BwCredentials, crypto::BwCrypt, error::Result};
@@ -115,11 +115,6 @@ impl BwSession {
 
     pub fn expired(&self) -> Result<bool> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-
-        if now > self.expiry_ts {
-            warn!("session expired");
-        }
-
         Ok(now > self.expiry_ts)
     }
 }
