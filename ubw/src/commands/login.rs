@@ -49,9 +49,11 @@ where
     if let BwCipherData::Login(login) = cipher.data {
         if let Some(encrypted_password) = login.password {
             let pass: String = session.decrypt(&encrypted_password)?.try_into()?;
+
+            let mut stdout = stdout();
             // can't safely use the println! macro
-            stdout().write_all(pass.as_bytes()).await?;
-            stdout().flush().await?;
+            stdout.write_all(pass.as_bytes()).await?;
+            stdout.flush().await?;
             Ok(())
         } else {
             Err(Error::PasswordNotFound.into())
