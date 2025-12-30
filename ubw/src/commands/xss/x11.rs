@@ -95,6 +95,10 @@ async fn read_password() -> Result<Vec<u8>> {
         geometry.width, geometry.height, geometry.x, geometry.y
     );
 
+    // Clear the window at the start to remove any previous dots
+    conn.clear_area(false, drawable, 0, 0, geometry.width, geometry.height)?;
+    conn.flush()?;
+
     // Detect monitors using RandR
     let monitors = detect_monitors(&conn, screen.root)?;
     error!("Detected {} monitors", monitors.len());

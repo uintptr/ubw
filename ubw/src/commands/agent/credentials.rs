@@ -55,11 +55,6 @@ fn get_peer_pid(client: &UnixStream) -> Result<u32> {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-fn get_peer_pid(_client: &UnixStream) -> Result<u32> {
-    Ok(nix::unistd::getuid().as_raw())
-}
-
 async fn read_string(stream: &mut UnixStream) -> Result<String> {
     let len = stream.read_i32().await?;
     let len: usize = len.try_into()?;
@@ -109,10 +104,18 @@ impl CacheServer {
         })
     }
 
+    #[cfg(target_os = "linux")]
     fn verify_client(&self, client: &UnixStream) -> Result<bool> {
         let client_uid = get_peer_pid(client)?;
         info!("client pid={client_uid}");
         Ok(self.self_uid == client_uid)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn verify_client(&self, client: &UnixStream) -> Result<bool> {
+        // on macos the socket file is only readable-writable by the
+        // current user
+        Ok(true)
     }
 
     fn parse_command_write(&mut self, kv: &str) -> Result<ServerResponse> {
