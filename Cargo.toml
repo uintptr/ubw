@@ -3,7 +3,7 @@ resolver = "2"
 members = ["ubitwarden", "ubitwarden-agent", "ubw"]
 
 [workspace.package]
-version = "0.0.33"
+version = "0.0.34"
 edition = "2024"
 
 [workspace.dependencies]
@@ -25,6 +25,7 @@ num_enum = "0.7"
 reqwest = { version = "0.13", default-features = false, features = [
   "form",
   "json",
+  "rustls"
 ] }
 rstaples = "0.3"
 rust-embed = "8.9"
