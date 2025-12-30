@@ -1,14 +1,17 @@
 use clap::Args;
 use std::env;
 use ubitwarden::api::BwApi;
+use ubitwarden_agent::agent::UBWAgent;
 
 use anyhow::Result;
-use log::error;
+use log::{error, info};
 use tokio::io::{self, AsyncReadExt};
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
+
+use crate::commands::agent::server::spawn_server;
 
 #[derive(Args)]
 pub struct XSecureLockArgs {
@@ -190,6 +193,20 @@ async fn read_password() -> Result<Vec<u8>> {
     Ok(chars)
 }
 
+async fn store_password(args: &XSecureLockArgs, password: &str) -> Result<()> {
+    let mut agent = if let Ok(v) = UBWAgent::new().await {
+        v
+    } else {
+        info!("unable to talk to the server. spawning a new one");
+        spawn_server().await?;
+        UBWAgent::new().await?
+    };
+
+    agent.store_credentials(&args.email, &args.server_url, password).await?;
+
+    Ok(())
+}
+
 pub async fn command_xsecurelock(args: XSecureLockArgs) -> Result<()> {
     let password_chars = read_password().await?;
 
@@ -201,7 +218,11 @@ pub async fn command_xsecurelock(args: XSecureLockArgs) -> Result<()> {
 
     let api = BwApi::new(&args.email, &args.server_url)?;
 
-    api.auth(password).await?;
+    api.auth(&password).await?;
+
+    if let Err(e) = store_password(&args, &password).await {
+        error!("Unable to store password ({e})");
+    }
 
     Ok(())
 }
