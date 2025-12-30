@@ -1,4 +1,6 @@
 use log::{error, info, warn};
+use std::fs;
+use std::path::PathBuf;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
@@ -9,9 +11,11 @@ pub struct UBWAgent {
     stream: UnixStream,
 }
 
+pub const UBW_DATA_DIR: &str = env!("CARGO_PKG_NAME");
+
 impl UBWAgent {
     pub async fn new() -> Result<Self> {
-        let socket_name = UBWAgent::create_socket_name();
+        let socket_name = UBWAgent::create_socket_name()?;
 
         let stream = UnixStream::connect(socket_name).await?;
 
@@ -19,8 +23,30 @@ impl UBWAgent {
     }
 
     #[must_use]
-    pub fn create_socket_name() -> String {
-        format!("\0ubw_{}", whoami::username())
+    #[cfg(target_os = "linux")]
+    pub fn create_socket_name() -> Result<String> {
+        let name = format!("\0ubw_{}", whoami::username());
+        Ok(name)
+    }
+
+    #[must_use]
+    #[cfg(not(target_os = "linux"))]
+    pub fn create_socket_name() -> Result<PathBuf> {
+        use ubitwarden::error::Error;
+
+        let data_dir = dirs::data_dir().ok_or(Error::BasenameError)?;
+
+        let data_dir = data_dir.join(UBW_DATA_DIR);
+
+        // create data dir if it doesn't exist
+        if !data_dir.exists() {
+            fs::create_dir_all(&data_dir)?;
+        }
+
+        let socket_name = format!("ubw_{}", whoami::username());
+        let socket_path = data_dir.join(socket_name);
+
+        Ok(socket_path)
     }
 
     async fn write_string<S>(&mut self, input: S) -> Result<()>

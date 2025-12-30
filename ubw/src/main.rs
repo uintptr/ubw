@@ -14,7 +14,7 @@ use ubw::{
         ciphers::{command_cipher, command_ciphers},
         login::{command_password, command_totp},
         ssh::command_ssh_keys,
-        xsecurelock::{XSecureLockArgs, command_xsecurelock},
+        xss::{XSecureLockArgs, command_xsecurelock},
     },
     common_const::UBW_DATA_DIR,
 };

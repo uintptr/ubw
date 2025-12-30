@@ -1,4 +1,4 @@
-use std::{collections::HashMap, os::unix::io::AsRawFd};
+use std::{collections::HashMap, fs};
 
 use anyhow::Result;
 use clap::Args;
@@ -31,7 +31,10 @@ pub struct CacheServer {
     storage: HashMap<String, String>,
 }
 
+#[cfg(target_os = "linux")]
 fn get_peer_pid(client: &UnixStream) -> Result<u32> {
+    use os::unix::io::AsRawFd;
+
     let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
     let mut len = libc::socklen_t::try_from(std::mem::size_of::<libc::ucred>())?;
 
@@ -50,6 +53,11 @@ fn get_peer_pid(client: &UnixStream) -> Result<u32> {
     } else {
         Err(Error::ClientPidNotFound.into())
     }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn get_peer_pid(_client: &UnixStream) -> Result<u32> {
+    Ok(nix::unistd::getuid().as_raw())
 }
 
 async fn read_string(stream: &mut UnixStream) -> Result<String> {
@@ -82,8 +90,13 @@ impl CacheServer {
     pub fn new() -> Result<Self> {
         info!("binding unix socket");
 
-        let socket_name = UBWAgent::create_socket_name();
-        let listener = UnixListener::bind(socket_name)?;
+        let socket_path = UBWAgent::create_socket_name()?;
+
+        if socket_path.exists() {
+            fs::remove_file(&socket_path)?;
+        }
+
+        let listener = UnixListener::bind(socket_path)?;
 
         let self_uid = nix::unistd::getuid().as_raw();
 

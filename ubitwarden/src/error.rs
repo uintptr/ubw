@@ -44,6 +44,8 @@ pub enum Error {
     AuthFailure,
     #[error("Unknown type={0}")]
     UnknownTypeInt(u64),
+    #[error("Basename failure")]
+    BasenameError,
 
     //
     // 2d party

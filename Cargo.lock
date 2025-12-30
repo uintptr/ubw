@@ -3155,6 +3155,7 @@ dependencies = [
 name = "ubitwarden-agent"
 version = "0.0.28"
 dependencies = [
+ "dirs",
  "log",
  "serde",
  "serde_json",

@@ -13,17 +13,6 @@ use x11rb::rust_connection::RustConnection;
 
 use crate::commands::agent::server::spawn_server;
 
-#[derive(Args)]
-pub struct XSecureLockArgs {
-    /// email address
-    #[arg(short, long)]
-    pub email: String,
-
-    /// server url
-    #[arg(short, long)]
-    pub server_url: String,
-}
-
 #[derive(Debug, Clone)]
 struct Monitor {
     x: i16,
