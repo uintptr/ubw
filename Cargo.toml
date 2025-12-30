@@ -22,9 +22,10 @@ libc = "0.2"
 log = "0.4"
 nix = { version = "0.30", features = ["user"] }
 num_enum = "0.7"
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
+  "form",
   "json",
-  "rustls-tls"
+  "rustls"
 ] }
 rstaples = "0.3"
 rust-embed = "8.9"
