@@ -22,14 +22,12 @@ impl UBWAgent {
         Ok(Self { stream })
     }
 
-    #[must_use]
     #[cfg(target_os = "linux")]
     pub fn create_socket_name() -> Result<PathBuf> {
         let name = format!("\0ubw_{}", whoami::username());
         Ok(PathBuf::from(name))
     }
 
-    #[must_use]
     #[cfg(not(target_os = "linux"))]
     pub fn create_socket_name() -> Result<PathBuf> {
         use std::fs;
