@@ -26,7 +26,7 @@ impl BwSessionData {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
         // added a grace period so we have to re-auth
-        let expiry_ts = now + auth.expires_in - BW_SESSION_GRACE;
+        let expiry_ts = now.saturating_add(auth.expires_in).saturating_sub(BW_SESSION_GRACE);
 
         let key = crypt.export();
 
@@ -74,7 +74,7 @@ impl FromStr for BwSession {
             Ok(v) => v,
             Err(e) => {
                 info!("unable to deserialize session data ({e})");
-                return Err(e.into());
+                return Err(crate::error::Error::Serialization(e));
             }
         };
 
@@ -82,7 +82,7 @@ impl FromStr for BwSession {
             Ok(v) => v,
             Err(e) => {
                 error!("Unable to load key from session data ({e})");
-                return Err(e.into());
+                return Err(e);
             }
         };
 
@@ -117,7 +117,7 @@ impl BwSession {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
         if now > self.expiry_ts {
-            warn!("session expired")
+            warn!("session expired");
         }
 
         Ok(now > self.expiry_ts)

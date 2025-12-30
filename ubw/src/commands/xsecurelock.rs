@@ -8,7 +8,7 @@ use log::{error, info};
 use tokio::io::{self, AsyncReadExt};
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::ConnectionExt as _;
-use x11rb::protocol::xproto::*;
+use x11rb::protocol::xproto::{ConfigureWindowAux, ConnectionExt, CreateGCAux, Rectangle, StackMode};
 use x11rb::rust_connection::RustConnection;
 
 use crate::commands::agent::server::spawn_server;
@@ -69,6 +69,9 @@ fn detect_monitors(conn: &impl Connection, root: u32) -> Result<Vec<Monitor>> {
     }])
 }
 
+const DOT_RADIUS: i16 = 30; // Much larger dots
+const DOT_SPACING: i16 = 70;
+
 async fn read_password() -> Result<Vec<u8>> {
     let mut buf = [0u8; 1];
     let mut chars = Vec::new();
@@ -93,7 +96,7 @@ async fn read_password() -> Result<Vec<u8>> {
 
     // Use the window_id directly as the drawable
     let drawable = window_id;
-    error!("Using drawable={drawable} (0x{:x})", drawable);
+    error!("Using drawable={drawable} (0x{drawable:x})");
 
     // Get window geometry
     let geometry = conn.get_geometry(drawable)?.reply()?;
@@ -113,7 +116,7 @@ async fn read_password() -> Result<Vec<u8>> {
     // Create graphics context with green color for visibility
     let gc = conn.generate_id()?;
     let gc_aux = CreateGCAux::new()
-        .foreground(0x00FF00) // Green color
+        .foreground(0x0000_FF00) // Green color
         .graphics_exposures(0);
     conn.create_gc(gc, drawable, &gc_aux)?;
 
@@ -125,9 +128,6 @@ async fn read_password() -> Result<Vec<u8>> {
     let config = ConfigureWindowAux::new().stack_mode(StackMode::ABOVE);
     conn.configure_window(drawable, &config)?;
     conn.flush()?;
-
-    const DOT_RADIUS: i16 = 30; // Much larger dots
-    const DOT_SPACING: i16 = 70;
 
     loop {
         reader.read_exact(&mut buf).await?;
@@ -153,27 +153,27 @@ async fn read_password() -> Result<Vec<u8>> {
 
         // Draw dots for each character on each monitor
         let num_dots = i16::try_from(chars.len())?;
-        let total_width = num_dots * DOT_SPACING;
+        let total_width = num_dots.saturating_mul(DOT_SPACING);
 
         for (mon_idx, monitor) in monitors.iter().enumerate() {
-            let center_x = monitor.x + i16::try_from(monitor.width / 2)?;
-            let center_y = monitor.y + i16::try_from(monitor.height / 2)?;
-            let start_x = center_x - total_width / 2;
+            let center_x = monitor.x.saturating_add(i16::try_from(monitor.width / 2)?);
+            let center_y = monitor.y.saturating_add(i16::try_from(monitor.height / 2)?);
+            let start_x = center_x.saturating_sub(total_width / 2);
 
-            error!("Monitor {}: drawing at center ({}, {})", mon_idx, center_x, center_y);
+            error!("Monitor {mon_idx}: drawing at center ({center_x}, {center_y})");
 
             // Draw filled rectangles (dots) instead of arcs for simplicity
             let mut rects = Vec::new();
             for i in 0..num_dots {
-                let x = start_x + i * DOT_SPACING;
+                let x = start_x.saturating_add(i.saturating_mul(DOT_SPACING));
                 let y = center_y;
 
                 // Create filled rectangle (dot)
                 rects.push(Rectangle {
-                    x: x - DOT_RADIUS,
-                    y: y - DOT_RADIUS,
-                    width: u16::try_from(DOT_RADIUS * 2)?,
-                    height: u16::try_from(DOT_RADIUS * 2)?,
+                    x: x.saturating_sub(DOT_RADIUS),
+                    y: y.saturating_sub(DOT_RADIUS),
+                    width: u16::try_from(DOT_RADIUS.saturating_mul(2))?,
+                    height: u16::try_from(DOT_RADIUS.saturating_mul(2))?,
                 });
             }
 
