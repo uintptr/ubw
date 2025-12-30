@@ -148,7 +148,11 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
 
     // Connect to X11
     let (conn, screen_num) = RustConnection::connect(None)?;
-    let screen = &conn.setup().roots[screen_num];
+    let screen = conn
+        .setup()
+        .roots
+        .get(screen_num)
+        .ok_or_else(|| anyhow::anyhow!("Invalid screen number: {screen_num}"))?;
 
     // Use the window_id directly as the drawable
     let drawable = window_id;

@@ -53,7 +53,7 @@ impl LoginConfigData {
     }
 
     pub fn from_file() -> Result<Self> {
-        let config_dir = dirs::config_dir().ok_or(anyhow!("config dir not found"))?;
+        let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("config dir not found"))?;
 
         let config_file = config_dir.join(UBW_CONFIG_DIR).join(LOGIN_FILE_NAME);
 
@@ -69,7 +69,7 @@ impl LoginConfigData {
     }
 
     pub fn sync(&self) -> Result<()> {
-        let config_dir = dirs::config_dir().ok_or(anyhow!("config dir not found"))?;
+        let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("config dir not found"))?;
 
         let config_dir = config_dir.join(UBW_CONFIG_DIR);
 

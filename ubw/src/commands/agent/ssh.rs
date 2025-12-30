@@ -318,7 +318,7 @@ impl SshAgentServer {
     }
 
     pub async fn accept_loop(&self, mut quit_rx: Receiver<bool>) -> Result<()> {
-        let data_dir = dirs::data_dir().ok_or(anyhow!("unable to find data-dir"))?;
+        let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("unable to find data-dir"))?;
         let data_dir = data_dir.join(UBW_DATA_DIR);
 
         // create data dir if it doesn't exist
@@ -339,7 +339,7 @@ impl SshAgentServer {
         let perms = Permissions::from_mode(0o600);
         fs::set_permissions(&socket_path, perms).await?;
 
-        let agent = BwSshAgent::new(self.cache.clone());
+        let agent = BwSshAgent::new(Arc::clone(&self.cache));
 
         let ret = select! {
             _ = quit_rx.changed() => Ok(()),
