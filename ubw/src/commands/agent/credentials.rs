@@ -217,7 +217,10 @@ impl CacheServer {
             info!("accepting clients");
 
             select! {
-                // this'll get signaled after a SIGTERM and we'll break out
+                //
+                // this'll get signaled after a SIGTERM or SIGINT
+                // and we'll break out of the loop so we can return
+                //
                 _ = quit_rx.changed() => break Ok(()),
                 accept_ret = self.listener.accept() => {
                     let ( client, _ ) = match accept_ret {
