@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, sync::Arc};
 
 use anyhow::Result;
 use clap::Args;
@@ -7,7 +7,8 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
     select,
-    sync::watch::Receiver,
+    sync::{RwLock, watch::Receiver},
+    task::JoinSet,
 };
 use ubitwarden::error::Error;
 use ubitwarden_agent::agent::UBWAgent;
@@ -27,10 +28,14 @@ enum ServerResponse {
     String(String),
 }
 
+struct ClientHandler {
+    self_uid: u32,
+    storage_lock: Arc<RwLock<CredStorage>>,
+}
+
 pub struct CacheServer {
     listener: UnixListener,
-    self_uid: u32,
-    storage: CredStorage,
+    storage_lock: Arc<RwLock<CredStorage>>,
 }
 
 #[cfg(target_os = "linux")]
@@ -83,27 +88,11 @@ where
     Ok(())
 }
 
-impl CacheServer {
-    pub fn new() -> Result<Self> {
-        info!("binding unix socket");
-
-        let socket_path = UBWAgent::create_socket_name()?;
-
-        if socket_path.exists() {
-            fs::remove_file(&socket_path)?;
-        }
-
-        let listener = UnixListener::bind(socket_path)?;
-
+impl ClientHandler {
+    pub fn new(storage_lock: Arc<RwLock<CredStorage>>) -> Self {
         let self_uid = nix::unistd::getuid().as_raw();
 
-        let storage = CredStorage::new();
-
-        Ok(Self {
-            listener,
-            self_uid,
-            storage,
-        })
+        Self { self_uid, storage_lock }
     }
 
     #[cfg(target_os = "linux")]
@@ -120,7 +109,7 @@ impl CacheServer {
         Ok(true)
     }
 
-    fn parse_command_write(&mut self, kv: &str) -> Result<ServerResponse> {
+    async fn parse_command_write(&self, kv: &str) -> Result<ServerResponse> {
         let comp: Vec<&str> = kv.splitn(2, ':').collect();
 
         if 2 == comp.len() {
@@ -129,7 +118,9 @@ impl CacheServer {
 
             info!("writing {key}");
 
-            self.storage.add(key, val);
+            let mut storage = self.storage_lock.write().await;
+            storage.add(key, val);
+
             Ok(ServerResponse::Empty)
         } else {
             error!("invalid command format write");
@@ -137,28 +128,33 @@ impl CacheServer {
         }
     }
 
-    fn parse_command_read(&self, key: &str) -> ServerResponse {
+    async fn parse_command_read(&self, key: &str) -> ServerResponse {
         info!("reading {key}");
 
-        match self.storage.get(key) {
+        let storage = self.storage_lock.read().await;
+
+        match storage.get(key) {
             Some(v) => ServerResponse::String(v.clone()),
             None => ServerResponse::String(String::new()),
         }
     }
 
-    fn parse_command_delete(&mut self, key: &str) -> ServerResponse {
+    async fn parse_command_delete(&self, key: &str) -> ServerResponse {
         info!("deleting {key}");
-        self.storage.remove(key);
+
+        let mut storage = self.storage_lock.write().await;
+
+        storage.remove(key);
         ServerResponse::Empty
     }
 
-    fn parse_command(&mut self, command: &str) -> Result<ServerResponse> {
+    async fn parse_command(&self, command: &str) -> Result<ServerResponse> {
         if let Some(kv) = command.strip_prefix("write:") {
-            self.parse_command_write(kv)
+            self.parse_command_write(kv).await
         } else if let Some(key) = command.strip_prefix("read:") {
-            Ok(self.parse_command_read(key))
+            Ok(self.parse_command_read(key).await)
         } else if let Some(key) = command.strip_prefix("delete:") {
-            Ok(self.parse_command_delete(key))
+            Ok(self.parse_command_delete(key).await)
         } else if command.eq("stop") {
             warn!("asked to stop");
             Ok(ServerResponse::Quit)
@@ -170,7 +166,7 @@ impl CacheServer {
         }
     }
 
-    async fn client_handler(&mut self, mut client: UnixStream) -> Result<()> {
+    async fn client_handler(&self, mut client: UnixStream) -> Result<()> {
         let verified = self.verify_client(&client)?;
 
         if !verified {
@@ -183,10 +179,10 @@ impl CacheServer {
 
             let command = read_string(&mut client).await?;
 
-            let response = self.parse_command(&command)?;
+            let response = self.parse_command(&command).await?;
 
             match response {
-                ServerResponse::Quit => break Err(Error::EndOfFile.into()),
+                ServerResponse::Quit => break Err(Error::Shutdown.into()),
                 ServerResponse::Empty => {}
                 ServerResponse::String(s) => {
                     write_string(&mut client, s).await?;
@@ -195,8 +191,28 @@ impl CacheServer {
             }
         }
     }
+}
 
-    pub async fn accept_loop(&mut self, mut quit_rx: Receiver<bool>) -> Result<()> {
+impl CacheServer {
+    pub fn new() -> Result<Self> {
+        info!("binding unix socket");
+
+        let socket_path = UBWAgent::create_socket_name()?;
+
+        if socket_path.exists() {
+            fs::remove_file(&socket_path)?;
+        }
+
+        let listener = UnixListener::bind(socket_path)?;
+
+        let storage_lock = Arc::new(RwLock::new(CredStorage::new()));
+
+        Ok(Self { listener, storage_lock })
+    }
+
+    pub async fn accept_loop(&self, mut quit_rx: Receiver<bool>) -> Result<()> {
+        let mut clients_set = JoinSet::new();
+
         loop {
             info!("accepting clients");
 
@@ -212,20 +228,29 @@ impl CacheServer {
                         }
                     };
 
-                    let client_ret = self.client_handler(client).await;
+                    //
+                    // spawn a task for this client
+                    //
+                    let handler = ClientHandler::new(self.storage_lock.clone());
 
+                    clients_set.spawn(async move {
+                        handler.client_handler(client).await
+                    });
+                },
+                Some(Ok(client_ret)) = clients_set.join_next() => {
                     warn!("client disconnected");
 
                     match client_ret {
                         Ok(()) => {},
                         Err(e) => {
-                            if let Some(Error::EndOfFile) = e.downcast_ref::<Error>() {
+                            if let Some(Error::Shutdown) = e.downcast_ref::<Error>() {
                                 break Ok(());
                             }
                             error!("{e}");
                         }
                     }
-                },
+
+                }
             }
         }
     }

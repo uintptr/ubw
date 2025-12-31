@@ -38,8 +38,8 @@ pub enum Error {
     PasswordNotFound,
     #[error("Client Verification Failure")]
     ClientVerificationFailure,
-    #[error("End Of File")]
-    EndOfFile,
+    #[error("Shutdown Requested")]
+    Shutdown,
     #[error("Authentication Failure")]
     AuthFailure,
     #[error("Unknown type={0}")]

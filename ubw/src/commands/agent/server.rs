@@ -53,7 +53,7 @@ async fn signal_handlers() -> Result<()> {
 }
 
 async fn cache_server() -> Result<()> {
-    let mut creds_server = CacheServer::new()?;
+    let creds_server = CacheServer::new()?;
     let ssh_server = SshAgentServer::new();
 
     let (quit_tx, quit_rx) = watch::channel(false);
@@ -136,12 +136,12 @@ pub async fn command_agent(args: AgentArgs) -> Result<()> {
                 v.stop().await?;
 
                 // Wait until ping fails
-                for _ in 0..5 {
+                for _ in 0..20 {
                     if UBWAgent::new().await.is_err() {
                         info!("server stopped");
                         return Ok(());
                     }
-                    sleep(Duration::from_secs(1)).await;
+                    sleep(Duration::from_millis(100)).await;
                 }
 
                 bail!("Unable to stop server");
