@@ -173,7 +173,14 @@ impl Session for BwSshAgent {
 
         for ssh_key in ssh_keys {
             // Decrypt the fingerprint to use as comment
-            let comment = match crypt.decrypt(&ssh_key.key_fingerprint) {
+
+            let name = if let Some(v) = ssh_key.name {
+                v
+            } else {
+                ssh_key.key_fingerprint
+            };
+
+            let comment = match crypt.decrypt(&name) {
                 Ok(decrypted) => match String::try_from(decrypted) {
                     Ok(s) => s,
                     Err(e) => {
