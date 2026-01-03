@@ -12,7 +12,6 @@ use ubw::{
         agent::server::{AgentArgs, command_agent},
         auth::{AuthArgs, command_auth, command_logins, command_logout},
         ciphers::{command_cipher, command_ciphers},
-        firefox_relay::{FirefoxCommands, commands_firefox},
         login::{command_password, command_totp},
         ssh::command_ssh_keys,
         xss::{XSecureLockArgs, command_xsecurelock},
@@ -42,12 +41,6 @@ pub enum Commands {
     Logout,
     /// xsecurelock
     XSecureLock(XSecureLockArgs),
-    /// firefox relay
-    #[command(visible_alias = "ff")]
-    FirefoxRelay {
-        #[command(subcommand)]
-        action: FirefoxCommands,
-    },
 }
 
 #[derive(Parser)]
@@ -76,7 +69,6 @@ async fn tokio_entry(args: UserArgs) -> Result<()> {
         Commands::Logins => command_logins().await,
         Commands::Logout => command_logout().await,
         Commands::XSecureLock(xss) => command_xsecurelock(xss).await,
-        Commands::FirefoxRelay { action } => commands_firefox(action).await,
     }
 }
 
