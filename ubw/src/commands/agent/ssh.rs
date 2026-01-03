@@ -20,7 +20,7 @@ use ubitwarden::session::BwSession;
 use log::{error, info, warn};
 use ubitwarden_agent::agent::UBWAgent;
 
-use crate::common_const::UBW_DATA_DIR;
+use crate::common::UBW_DATA_DIR;
 
 const SOCK_PREFIX: &str = env!("CARGO_PKG_NAME");
 

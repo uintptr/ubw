@@ -12,7 +12,7 @@ use ubitwarden_agent::agent::UBWAgent;
 use crate::{
     banner::display_banner,
     commands::agent::server::spawn_server,
-    common_const::{UBW_APP_NAME, UBW_APP_VERSION, UBW_CONFIG_DIR},
+    common::{UBW_APP_NAME, UBW_APP_VERSION, UBW_CONFIG_DIR},
 };
 
 const LOGIN_FILE_NAME: &str = "login.json";

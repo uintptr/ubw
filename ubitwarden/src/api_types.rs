@@ -3,6 +3,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use serde_repr::Deserialize_repr;
 
+use crate::session::BwSession;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BwAuth {
     #[serde(rename = "KdfIterations")]
@@ -61,6 +63,7 @@ pub struct BwLogin {
     pub uri: Option<String>,
     pub uris: Option<Vec<serde_json::Value>>,
 }
+
 //
 // type = 2
 //
@@ -163,6 +166,14 @@ where
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BwCipherField {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub field_type: u64,
+    pub value: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct BwCipher {
     pub id: String,
     pub name: String,
@@ -172,12 +183,30 @@ pub struct BwCipher {
     pub data: BwCipherData,
     #[serde(rename = "type")]
     pub cipher_type: BwCipherType,
+    pub fields: Vec<BwCipherField>,
 }
 
 impl BwCipher {
     #[must_use]
     pub fn deleted(&self) -> bool {
         self.deleted_data.is_some()
+    }
+
+    pub fn field_by_name<S>(&self, session: &BwSession, name: S) -> Option<&BwCipherField>
+    where
+        S: AsRef<str>,
+    {
+        for f in self.fields.iter() {
+            if let Ok(encoded_name) = session.decrypt(&f.name)
+                && let Ok(field_name) = TryInto::<String>::try_into(encoded_name)
+            {
+                if field_name == name.as_ref() {
+                    return Some(&f);
+                }
+            }
+        }
+
+        None
     }
 }
 

@@ -14,7 +14,7 @@ use ubitwarden_agent::agent::UBWAgent;
 
 use crate::{
     commands::agent::{credentials::CacheServer, ssh::SshAgentServer},
-    common_const::UBW_APP_VERSION,
+    common::UBW_APP_VERSION,
 };
 
 const SPAWN_WAIT_TIMEOUT: usize = 5;

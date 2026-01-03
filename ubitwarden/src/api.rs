@@ -188,9 +188,19 @@ impl BwApi {
 
             let ret = self.client.get(ciphers_url).bearer_auth(&auth.access_token).send().await?;
 
-            let text = ret.text().await?;
+            let value = ret.json::<serde_json::Value>().await?;
 
-            let resp: BwCipherResponse = serde_json::from_str(&text)?;
+            if let Some(data) = value.get("data")
+                && let Some(array) = data.as_array()
+            {
+                for e in array {
+                    if let Some(fields) = e.get("fields") {
+                        dbg!(&fields);
+                    }
+                }
+            }
+
+            let resp: BwCipherResponse = serde_json::from_value(value)?;
 
             ciphers.extend(resp.data);
 
