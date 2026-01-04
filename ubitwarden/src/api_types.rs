@@ -196,13 +196,12 @@ impl BwCipher {
     where
         S: AsRef<str>,
     {
-        for f in self.fields.iter() {
+        for f in &self.fields {
             if let Ok(encoded_name) = session.decrypt(&f.name)
                 && let Ok(field_name) = TryInto::<String>::try_into(encoded_name)
+                && field_name == name.as_ref()
             {
-                if field_name == name.as_ref() {
-                    return Some(&f);
-                }
+                return Some(f);
             }
         }
 

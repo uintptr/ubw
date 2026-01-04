@@ -190,16 +190,6 @@ impl BwApi {
 
             let value = ret.json::<serde_json::Value>().await?;
 
-            if let Some(data) = value.get("data")
-                && let Some(array) = data.as_array()
-            {
-                for e in array {
-                    if let Some(fields) = e.get("fields") {
-                        dbg!(&fields);
-                    }
-                }
-            }
-
             let resp: BwCipherResponse = serde_json::from_value(value)?;
 
             ciphers.extend(resp.data);

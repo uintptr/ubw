@@ -28,11 +28,11 @@ struct LoginConfigData {
 #[derive(Args)]
 pub struct AuthArgs {
     /// email address
-    #[arg(short, long)]
+    #[arg(short, long, env = "UBW_EMAIL")]
     pub email: Option<String>,
 
     /// server url
-    #[arg(short, long)]
+    #[arg(short, long, env = "UBW_SERVER_URL")]
     pub server_url: Option<String>,
 
     /// force
