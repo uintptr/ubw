@@ -13,7 +13,13 @@ fn display_ssh_keys(session: &BwSession, keys: &[BwCipher]) -> Result<()> {
         if let BwCipherData::Ssh(ssh) = &c.data {
             let public_key: String = session.decrypt(&ssh.public_key)?.try_into()?;
 
-            println!("{public_key}");
+            let name = if let Some(encrypted_name) = &ssh.name {
+                let plain_name: String = session.decrypt(encrypted_name)?.try_into()?;
+                plain_name
+            } else {
+                String::new()
+            };
+            println!("{public_key} {name}");
         }
     }
 
