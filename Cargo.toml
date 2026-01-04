@@ -3,7 +3,7 @@ resolver = "2"
 members = ["ubitwarden", "ubitwarden-agent", "ubw"]
 
 [workspace.package]
-version = "0.0.37"
+version = "0.0.38"
 edition = "2024"
 
 [workspace.dependencies]
@@ -36,9 +36,9 @@ signature = "2.2"
 ssh-agent-lib = "0.5"
 tabled = "0.20"
 thiserror = "2.0"
-tokio = { version = "1.48", features = ["full"] }
+tokio = { version = "1.49", features = ["full"] }
 totp-rs = { version = "5.7", features = ["otpauth"] }
-whoami = "1"
+whoami = "2"
 x11rb = { version = "0.13", features = ["allow-unsafe-code", "randr"] }
 
 [workspace.lints.clippy]

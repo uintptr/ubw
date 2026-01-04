@@ -16,6 +16,7 @@ serde_repr.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 totp-rs.workspace = true
+whoami.workspace = true
 
 [dev-dependencies]
 rstaples.workspace = true

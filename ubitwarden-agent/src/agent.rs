@@ -24,7 +24,8 @@ impl UBWAgent {
 
     #[cfg(target_os = "linux")]
     pub fn create_socket_name() -> Result<PathBuf> {
-        let name = format!("\0ubw_{}", whoami::username());
+        let username = whoami::username()?;
+        let name = format!("\0ubw_{}", username);
         Ok(PathBuf::from(name))
     }
 

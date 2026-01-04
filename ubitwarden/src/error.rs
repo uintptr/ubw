@@ -76,4 +76,6 @@ pub enum Error {
     JoinFailure(#[from] tokio::task::JoinError),
     #[error(transparent)]
     SendBoolError(#[from] tokio::sync::watch::error::SendError<bool>),
+    #[error(transparent)]
+    WhoAmIError(#[from] whoami::Error),
 }
