@@ -43,7 +43,8 @@ impl UBWAgent {
             fs::create_dir_all(&data_dir)?;
         }
 
-        let socket_name = format!("ubw_{}", whoami::username());
+        let username = whoami::username()?;
+        let socket_name = format!("ubw_{username}");
         let socket_path = data_dir.join(socket_name);
 
         Ok(socket_path)
