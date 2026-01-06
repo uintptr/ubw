@@ -61,6 +61,8 @@ impl LoginConfigData {
             bail!("{} doesn't exist", config_file.display())
         }
 
+        info!("reading: {}", config_file.display());
+
         let config_data = fs::read_to_string(config_file)?;
 
         let config: Self = serde_json::from_str(&config_data)?;

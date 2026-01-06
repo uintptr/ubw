@@ -29,7 +29,6 @@ enum ServerResponse {
 }
 
 struct ClientHandler {
-    self_uid: u32,
     storage_lock: Arc<RwLock<CredStorage>>,
 }
 
@@ -90,20 +89,19 @@ where
 
 impl ClientHandler {
     pub fn new(storage_lock: Arc<RwLock<CredStorage>>) -> Self {
-        let self_uid = nix::unistd::getuid().as_raw();
-
-        Self { self_uid, storage_lock }
+        Self { storage_lock }
     }
 
     #[cfg(target_os = "linux")]
     fn verify_client(&self, client: &UnixStream) -> Result<bool> {
+        let self_uid = nix::unistd::getuid().as_raw();
         let client_uid = get_peer_pid(client)?;
         info!("client pid={client_uid}");
         Ok(self.self_uid == client_uid)
     }
 
     #[cfg(target_os = "macos")]
-    fn verify_client(&self, client: &UnixStream) -> Result<bool> {
+    fn verify_client(&self, _client: &UnixStream) -> Result<bool> {
         // on macos the socket file is only readable-writable by the
         // current user
         Ok(true)
