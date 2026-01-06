@@ -97,7 +97,7 @@ impl ClientHandler {
         let self_uid = nix::unistd::getuid().as_raw();
         let client_uid = get_peer_pid(client)?;
         info!("client pid={client_uid}");
-        Ok(self.self_uid == client_uid)
+        Ok(self_uid == client_uid)
     }
 
     #[cfg(target_os = "macos")]
