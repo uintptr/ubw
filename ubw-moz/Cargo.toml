@@ -1,35 +1,27 @@
 [package]
-name = "ubw"
+name = "ubw-moz"
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "ubw"
+name = "ubw-moz"
 path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+base64.workspace = true
 clap.workspace = true
-daemonize.workspace = true
-dialoguer.workspace = true
 dirs.workspace = true
-ed25519-dalek.workspace = true
-figlet-rs.workspace = true
-libc.workspace = true
 log.workspace = true
-nix.workspace = true
-reqwest.workspace = true
+rand.workspace = true
+rsa.workspace = true
 rstaples.workspace = true
-rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-signature.workspace = true
-ssh-agent-lib.workspace = true
-tabled.workspace = true
+sha1.workspace = true
 tokio.workspace = true
 ubitwarden = { path = "../ubitwarden-api" }
 ubitwarden-agent = { path = "../ubitwarden-agent" }
-x11rb.workspace = true
 
 [lints]
 workspace = true
