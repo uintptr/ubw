@@ -117,4 +117,9 @@ impl BwSession {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
         Ok(now > self.expiry_ts)
     }
+
+    #[must_use]
+    pub fn export_key(&self) -> String {
+        self.crypt.export()
+    }
 }

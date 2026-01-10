@@ -4,13 +4,13 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+dirs.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-ubitwarden = { path = "../ubitwarden" }
+ubitwarden = { path = "../ubitwarden-api" }
 whoami.workspace = true
-dirs.workspace = true
 
 [lints]
 workspace = true
