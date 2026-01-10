@@ -16,6 +16,7 @@ clap.workspace = true
 dirs.workspace = true
 hmac.workspace = true
 log.workspace = true
+pidlock.workspace = true
 rand.workspace = true
 rsa.workspace = true
 rstaples.workspace = true
@@ -26,7 +27,6 @@ sha2.workspace = true
 tokio.workspace = true
 ubitwarden = { path = "../ubitwarden-api" }
 ubitwarden-agent = { path = "../ubitwarden-agent" }
-
 
 [target.'cfg(target_os = "macos")'.dependencies]
 localauthentication-rs.workspace = true

@@ -1,8 +1,4 @@
-#![allow(unused)]
-use std::{
-    process::Stdio,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use aes::Aes256;
 use anyhow::{Result, anyhow, bail};
@@ -13,28 +9,23 @@ use cbc::{
 };
 use hmac::{Hmac, Mac};
 use log::{error, info};
+use pidlock::Pidlock;
 use rsa::{Oaep, RsaPublicKey, pkcs8::DecodePublicKey};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sha2::Sha256;
-use tokio::{
-    fs,
-    io::{self, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Stdin, Stdout},
-};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Stdin, Stdout};
 use ubitwarden_agent::agent::UBWAgent;
 
-use crate::biometric::biometric_login;
+use crate::{biometric::biometric_login, data::init_data_dir};
 
 #[derive(Deserialize)]
 struct CommandMessage {
     pub command: String,
     #[serde(rename = "publicKey")]
     pub public_key: Option<String>,
-    #[serde(rename = "userId")]
-    pub user_id: String,
     #[serde(rename = "messageId")]
     pub message_id: u64,
-    pub timestamp: u64,
 }
 
 #[derive(Deserialize)]
@@ -42,17 +33,6 @@ struct CommandRequest {
     #[serde(rename = "appId")]
     pub app_id: String,
     pub message: CommandMessage,
-}
-
-#[derive(Deserialize)]
-struct EncryptedData {
-    #[serde(rename = "encryptedString")]
-    pub encrypted_string: String,
-    #[serde(rename = "encryptionType")]
-    pub encryption_type: u32,
-    pub data: String,
-    pub iv: String,
-    pub mac: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -68,8 +48,6 @@ struct EncryptedMessage {
 
 #[derive(Deserialize)]
 struct DecryptRequest {
-    #[serde(rename = "appId")]
-    pub app_id: String,
     pub message: EncryptedMessage,
 }
 
@@ -250,20 +228,16 @@ impl UBwProxy {
             info!("using app_id={}", req.app_id);
             self.app_id = Some(req.app_id);
             req.message
-        } else if let Ok(req) = serde_json::from_slice::<DecryptRequest>(&data) {
-            if let Some(key) = &self.session_key {
-                let enc_req: DecryptRequest = serde_json::from_slice(&data)?;
+        } else if let Some(key) = &self.session_key {
+            let enc_req: DecryptRequest = serde_json::from_slice(&data)?;
 
-                let plain_data = key.decrypt_message(&enc_req.message)?;
+            let plain_data = key.decrypt_message(&enc_req.message)?;
 
-                let msg: CommandMessage = serde_json::from_slice(&plain_data)?;
+            let msg: CommandMessage = serde_json::from_slice(&plain_data)?;
 
-                msg
-            } else {
-                bail!("session key not found")
-            }
+            msg
         } else {
-            bail!("Unable to deserialize");
+            bail!("Missing session key")
         };
 
         Ok(msg)
@@ -403,8 +377,6 @@ async fn io_loop(mut proxy: UBwProxy) -> Result<()> {
     let stdout = io::stdout();
     let mut writer = BufWriter::new(stdout);
 
-    let mut session_key: Option<UBwMozSessionKey> = None;
-
     loop {
         let msg = proxy.read_message(&mut rdr).await?;
 
@@ -421,11 +393,17 @@ async fn io_loop(mut proxy: UBwProxy) -> Result<()> {
             }
         }
     }
-
-    Ok(())
 }
 
 pub async fn moz_proxy() -> Result<()> {
+    let data_dir = init_data_dir().await?;
+
+    let pid_file = data_dir.join("ubw_moz.pid");
+
+    let mut pid_lock = Pidlock::new_validated(pid_file)?;
+
+    pid_lock.acquire()?;
+
     let proxy = UBwProxy::new();
 
     if let Err(e) = io_loop(proxy).await {

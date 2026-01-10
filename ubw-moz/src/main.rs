@@ -1,22 +1,16 @@
-use std::{env, fs};
+use std::env;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use log::{LevelFilter, info};
 use rstaples::logging::StaplesLogger;
 use ubw_moz::{
+    data::init_data_dir,
     moz::{moz_install, moz_uninstall},
     proxy::moz_proxy,
 };
 
-const UBW_MOZ_DATA_DIR: &str = env!("CARGO_PKG_NAME");
-
-fn init_logging() -> Result<()> {
-    let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("unable to find data dir"))?;
-    let data_dir = data_dir.join(UBW_MOZ_DATA_DIR);
-
-    if !data_dir.exists() {
-        fs::create_dir_all(&data_dir)?;
-    }
+async fn init_logging() -> Result<()> {
+    let data_dir = init_data_dir().await?;
 
     let log_file = data_dir.join("proxy.log");
 
@@ -33,7 +27,7 @@ fn init_logging() -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_logging()?;
+    init_logging().await?;
 
     for (i, a) in env::args().enumerate() {
         info!("{i}: {a}");
