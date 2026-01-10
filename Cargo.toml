@@ -3,7 +3,7 @@ resolver = "2"
 members = ["ubitwarden-agent", "ubitwarden-api", "ubw", "ubw-moz"]
 
 [workspace.package]
-version = "0.0.43"
+version = "0.0.44"
 edition = "2024"
 
 [workspace.dependencies]
@@ -22,7 +22,6 @@ ed25519-dalek = "2.2"
 figlet-rs = "0.1"
 hmac = "0.12"
 libc = "0.2"
-localauthentication-rs = "0.1"
 log = "0.4"
 nix = { version = "0.30", features = ["user"] }
 num_enum = "0.7"
@@ -48,6 +47,8 @@ tokio = { version = "1.49", features = ["full"] }
 totp-rs = { version = "5.7", features = ["otpauth"] }
 whoami = "2"
 x11rb = { version = "0.13", features = ["allow-unsafe-code", "randr"] }
+localauthentication-rs = "0.1"
+
 
 [workspace.lints.clippy]
 arithmetic_side_effects = "warn"
