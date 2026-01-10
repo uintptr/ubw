@@ -15,6 +15,7 @@ cbc.workspace = true
 clap.workspace = true
 dirs.workspace = true
 hmac.workspace = true
+localauthentication-rs.workspace = true
 log.workspace = true
 rand.workspace = true
 rsa.workspace = true

@@ -23,6 +23,8 @@ use tokio::{
 };
 use ubitwarden_agent::agent::UBWAgent;
 
+use crate::biometric::biometric_login;
+
 #[derive(Deserialize)]
 struct CommandMessage {
     pub command: String,
@@ -308,7 +310,14 @@ impl UBwProxy {
 
     async fn cmd_unlock_vault(&mut self, w: &mut BufWriter<Stdout>, message_id: u64) -> Result<()> {
         let (response, user_key_b64) = match self.get_vault_key().await {
-            Ok(v) => (true, Some(v)),
+            Ok(v) => {
+                if let Err(e) = biometric_login().await {
+                    error!("biometric failure ({e}");
+                    (false, None)
+                } else {
+                    (true, Some(v))
+                }
+            }
             Err(e) => {
                 error!("Unable to get vault key ({e}");
                 (false, None)
