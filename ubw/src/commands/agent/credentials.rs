@@ -100,13 +100,6 @@ impl ClientHandler {
         Ok(self_uid == client_uid)
     }
 
-    #[cfg(target_os = "macos")]
-    fn verify_client(&self, _client: &UnixStream) -> Result<bool> {
-        // on macos the socket file is only readable-writable by the
-        // current user
-        Ok(true)
-    }
-
     async fn parse_command_write(&self, kv: &str) -> Result<ServerResponse> {
         let comp: Vec<&str> = kv.splitn(2, ':').collect();
 
@@ -165,11 +158,13 @@ impl ClientHandler {
     }
 
     async fn client_handler(&self, mut client: UnixStream) -> Result<()> {
-        let verified = self.verify_client(&client)?;
-
-        if !verified {
-            error!("Verification failed");
-            return Err(Error::ClientVerificationFailure.into());
+        #[cfg(target_os = "linux")]
+        {
+            let verified = self.verify_client(&client)?;
+            if !verified {
+                error!("Verification failed");
+                return Err(Error::ClientVerificationFailure.into());
+            }
         }
 
         loop {

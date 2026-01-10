@@ -1,6 +1,6 @@
 use std::{env, fs, io::Write, path::PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use log::info;
 use serde::Serialize;
 
@@ -27,10 +27,10 @@ struct MozProxyFile {
 
 fn find_moz_root() -> Result<PathBuf> {
     let moz_root = if cfg!(target_os = "macos") {
-        let config = dirs::config_dir().expect("config dir not found");
+        let config = dirs::config_dir().ok_or_else(|| anyhow!("config dir not found"))?;
         config.join("Mozilla")
     } else if cfg!(target_os = "linux") {
-        let home = dirs::home_dir().expect("home dir wasn't found");
+        let home = dirs::home_dir().ok_or_else(|| anyhow!("home dir wasn't found"))?;
         home.join(".mozilla")
     } else {
         bail!("not implemented");
@@ -59,7 +59,7 @@ pub fn moz_install() -> Result<()> {
         fs::create_dir_all(&dir)?;
     }
 
-    let self_exe = env::current_exe().expect("couldn't find a path to self");
+    let self_exe = env::current_exe()?;
 
     let config_file = dir.join(BITW_JSON_FILE_NAME);
 

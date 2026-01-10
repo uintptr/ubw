@@ -112,8 +112,8 @@ impl UBwMozSessionKey {
         let mac = BASE64_STANDARD.decode(&encrypted.mac)?;
 
         // Split session key: first 32 bytes = encryption key, last 32 bytes = MAC key
-        let enc_key = &self.key[0..32];
-        let mac_key = &self.key[32..64];
+        let enc_key = self.key.get(0..32).ok_or_else(|| anyhow!("Invalid key size"))?;
+        let mac_key = self.key.get(32..64).ok_or_else(|| anyhow!("Invalid key size"))?;
 
         // Verify HMAC-SHA256
         let mut hmac = Hmac::<Sha256>::new_from_slice(mac_key)?;
@@ -125,7 +125,7 @@ impl UBwMozSessionKey {
         let cipher = Decryptor::<Aes256>::new_from_slices(enc_key, &iv)?;
         let decrypted = cipher
             .decrypt_padded_vec_mut::<cbc::cipher::block_padding::Pkcs7>(&data)
-            .map_err(|e| anyhow::anyhow!("Decryption padding error: {:?}", e))?;
+            .map_err(|e| anyhow::anyhow!("Decryption padding error: {e}"))?;
 
         Ok(decrypted)
     }
@@ -143,8 +143,8 @@ impl UBwMozSessionKey {
         rng.fill_bytes(&mut iv);
 
         // Split session key: first 32 bytes = encryption key, last 32 bytes = MAC key
-        let enc_key = &self.key[0..32];
-        let mac_key = &self.key[32..64];
+        let enc_key = self.key.get(0..32).ok_or_else(|| anyhow!("Invalid key size"))?;
+        let mac_key = self.key.get(32..64).ok_or_else(|| anyhow!("Invalid key size"))?;
 
         // Encrypt AES-256-CBC with PKCS7 padding
         let cipher = Encryptor::<Aes256>::new_from_slices(enc_key, &iv)?;
@@ -159,10 +159,10 @@ impl UBwMozSessionKey {
         // Encode to base64
         let iv_b64 = BASE64_STANDARD.encode(&iv);
         let data_b64 = BASE64_STANDARD.encode(&encrypted_data);
-        let mac_b64 = BASE64_STANDARD.encode(&mac);
+        let mac_b64 = BASE64_STANDARD.encode(mac);
 
         // Create encrypted string format: "2.iv|data|mac"
-        let encrypted_string = format!("2.{}|{}|{}", iv_b64, data_b64, mac_b64);
+        let encrypted_string = format!("2.{iv_b64}|{data_b64}|{mac_b64}");
 
         Ok(EncryptedMessage {
             encrypted_string,
@@ -187,13 +187,12 @@ impl UBwProxy {
         }
     }
 
-    async fn write_encrypted_message<S>(&mut self, w: &mut BufWriter<Stdout>, res: S, msg_id: u64) -> Result<()>
+    async fn write_encrypted_message<S>(&self, w: &mut BufWriter<Stdout>, res: S, msg_id: u64) -> Result<()>
     where
         S: Serialize,
     {
-        let app_id = match &self.app_id {
-            Some(v) => v,
-            None => bail!("Missing app id"),
+        let Some(app_id) = &self.app_id else {
+            bail!("Missing app id");
         };
 
         let encoded_respose = serde_json::to_string(&res)?;
@@ -203,7 +202,7 @@ impl UBwProxy {
 
             // Wrap in the outer message structure expected by the browser
             let response = EncryptedResponse {
-                app_id: app_id,
+                app_id,
                 message_id: msg_id,
                 message: encrypted_msg,
             };
@@ -244,9 +243,8 @@ impl UBwProxy {
     }
 
     async fn setup_encryption(&mut self, w: &mut BufWriter<Stdout>, msg: &CommandMessage) -> Result<()> {
-        let app_id = match &self.app_id {
-            Some(v) => v,
-            None => bail!("Missing app id"),
+        let Some(app_id) = &self.app_id else {
+            bail!("Missing app id")
         };
 
         let key = UBwMozSessionKey::new();
@@ -254,7 +252,7 @@ impl UBwProxy {
         let encrypted_key = encrypt_message(msg, &key.key)?;
 
         let resp = NativeMessageResponse {
-            app_id: app_id,
+            app_id,
             command: &msg.command,
             message_id: -1,
             shared_secret: &encrypted_key,
@@ -282,7 +280,7 @@ impl UBwProxy {
         Ok(session.export_key())
     }
 
-    async fn cmd_unlock_vault(&mut self, w: &mut BufWriter<Stdout>, message_id: u64) -> Result<()> {
+    async fn cmd_unlock_vault(&self, w: &mut BufWriter<Stdout>, message_id: u64) -> Result<()> {
         let (response, user_key_b64) = match self.get_vault_key().await {
             Ok(v) => {
                 if let Err(e) = biometric_login().await {
@@ -308,8 +306,8 @@ impl UBwProxy {
         self.write_encrypted_message(w, &res, message_id).await
     }
 
-    async fn cmd_biometric_for_user(&mut self, w: &mut BufWriter<Stdout>, msg_id: u64) -> Result<()> {
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
+    async fn cmd_biometric_for_user(&self, w: &mut BufWriter<Stdout>, msg_id: u64) -> Result<()> {
+        let ts: i64 = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis().try_into()?;
 
         let res = GetBiometricStatus {
             command: "getBiometricsStatusForUser",
@@ -321,8 +319,8 @@ impl UBwProxy {
         self.write_encrypted_message(w, &res, msg_id).await
     }
 
-    async fn cmd_biometric_status(&mut self, w: &mut BufWriter<Stdout>, msg_id: u64) -> Result<()> {
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
+    async fn cmd_biometric_status(&self, w: &mut BufWriter<Stdout>, msg_id: u64) -> Result<()> {
+        let ts: i64 = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis().try_into()?;
 
         let res = GetBiometricStatus {
             command: "getBiometricsStatus",
@@ -408,7 +406,7 @@ pub async fn moz_proxy() -> Result<()> {
 
     if let Err(e) = io_loop(proxy).await {
         error!("io_loop() returnd {e}");
-        return Err(e.into());
+        return Err(e);
     }
 
     Ok(())
