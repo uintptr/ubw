@@ -24,8 +24,22 @@ ubw x-secure-lock --email email@example.com --server-url https://bw.example.com
 - /api/accounts/profile
 - /api/sync
 
-# Install
+# Install ubw
 
 ```
-cargo install --git https://github.com/uintptr/ubw
+cargo install --git https://github.com/uintptr/ubw ubw
+```
+
+# Install ubw-moz biometric handler for mozilla / firefox
+
+```
+cargo install --git https://github.com/uintptr/ubw ubw-moz
+```
+
+# Install the bitwarden manifest file
+
+This is only supported for macOS + TouchID at this point
+
+```
+ubw-moz install
 ```
