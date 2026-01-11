@@ -18,6 +18,12 @@ cat -p /path/to/auth_xss_ubw
 ubw x-secure-lock --email email@example.com --server-url https://bw.example.com
 ```
 
+# macOS TouchID support
+
+```
+ubw-moz install
+```
+
 # APIs
 
 - /identity/connect/token
