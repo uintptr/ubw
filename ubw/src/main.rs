@@ -55,8 +55,7 @@ pub struct UserArgs {
     pub command: Commands,
 }
 
-//#[tokio::main]
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn tokio_entry(args: UserArgs) -> Result<()> {
     match args.command {
         Commands::Auth(auth) => command_auth(auth).await,

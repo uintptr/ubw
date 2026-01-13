@@ -39,7 +39,7 @@ cargo install --git https://github.com/uintptr/ubw ubw
 # Install ubw-moz biometric handler for mozilla / firefox
 
 ```
-cargo install --git https://github.com/uintptr/ubw ubw-moz
+c https://github.com/uintptr/ubw ubw-moz
 ```
 
 # Install the bitwarden manifest file
@@ -47,5 +47,5 @@ cargo install --git https://github.com/uintptr/ubw ubw-moz
 This is only supported for macOS + TouchID at this point
 
 ```
-ubw-moz install
+ubwmoz install
 ```
