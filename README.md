@@ -39,7 +39,7 @@ cargo install --git https://github.com/uintptr/ubw ubw
 # Install ubw-moz biometric handler for mozilla / firefox
 
 ```
-c https://github.com/uintptr/ubw ubw-moz
+cargo install --git https://github.com/uintptr/ubw ubw-moz
 ```
 
 # Install the bitwarden manifest file
