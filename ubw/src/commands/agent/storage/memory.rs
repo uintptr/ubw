@@ -1,22 +1,25 @@
 use std::collections::HashMap;
 
+use anyhow::Result;
+
 pub struct CredStorage {
     memory: HashMap<String, String>,
 }
 
 impl CredStorage {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         let memory = HashMap::new();
 
-        Self { memory }
+        Ok(Self { memory })
     }
 
-    pub fn add<K, V>(&mut self, key: K, value: V)
+    pub fn add<K, V>(&mut self, key: K, value: V) -> Result<()>
     where
         K: Into<String>,
         V: Into<String>,
     {
         self.memory.insert(key.into(), value.into());
+        Ok(())
     }
 
     pub fn get<K>(&self, key: K) -> Option<&String>
