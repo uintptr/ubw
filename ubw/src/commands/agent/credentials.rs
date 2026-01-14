@@ -87,17 +87,17 @@ where
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn verify_client(client: &UnixStream) -> Result<bool> {
+    let self_uid = nix::unistd::getuid().as_raw();
+    let client_uid = get_peer_pid(client)?;
+    info!("client pid={client_uid}");
+    Ok(self_uid == client_uid)
+}
+
 impl ClientHandler {
     pub fn new(storage_lock: Arc<RwLock<CredStorage>>) -> Self {
         Self { storage_lock }
-    }
-
-    #[cfg(target_os = "linux")]
-    fn verify_client(&self, client: &UnixStream) -> Result<bool> {
-        let self_uid = nix::unistd::getuid().as_raw();
-        let client_uid = get_peer_pid(client)?;
-        info!("client pid={client_uid}");
-        Ok(self_uid == client_uid)
     }
 
     async fn parse_command_write(&self, kv: &str) -> Result<ServerResponse> {
@@ -160,7 +160,7 @@ impl ClientHandler {
     async fn client_handler(&self, mut client: UnixStream) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
-            let verified = self.verify_client(&client)?;
+            let verified = verify_client(&client)?;
             if !verified {
                 error!("Verification failed");
                 return Err(Error::ClientVerificationFailure.into());
