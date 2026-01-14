@@ -2,34 +2,36 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-pub struct CredStorage {
+use crate::commands::agent::storage::CredStorageTrait;
+
+pub struct MemoryStorage {
     memory: HashMap<String, String>,
 }
 
-impl CredStorage {
-    pub fn new() -> Result<Self> {
+impl CredStorageTrait for MemoryStorage {
+    fn new() -> Result<Self> {
         let memory = HashMap::new();
 
         Ok(Self { memory })
     }
 
-    pub fn add<K, V>(&mut self, key: K, value: V) -> Result<()>
+    fn add<K, V>(&mut self, key: K, value: V) -> Result<()>
     where
         K: Into<String>,
-        V: Into<String>,
+        V: AsRef<str>,
     {
-        self.memory.insert(key.into(), value.into());
+        self.memory.insert(key.into(), value.as_ref().into());
         Ok(())
     }
 
-    pub fn get<K>(&self, key: K) -> Option<&String>
+    fn get<K>(&self, key: K) -> Option<String>
     where
         K: AsRef<str>,
     {
-        self.memory.get(key.as_ref())
+        self.memory.get(key.as_ref()).cloned()
     }
 
-    pub fn remove<K>(&mut self, key: K)
+    fn remove<K>(&mut self, key: K)
     where
         K: AsRef<str>,
     {

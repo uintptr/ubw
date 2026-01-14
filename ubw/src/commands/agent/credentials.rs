@@ -13,7 +13,7 @@ use tokio::{
 use ubitwarden::error::Error;
 use ubitwarden_agent::agent::UBWAgent;
 
-use crate::commands::agent::storage::CredStorage;
+use crate::commands::agent::storage::{CredStorage, CredStorageTrait};
 
 #[derive(Args)]
 pub struct CacheArgs {
