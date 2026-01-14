@@ -110,7 +110,7 @@ impl ClientHandler {
             info!("writing {key}");
 
             let mut storage = self.storage_lock.write().await;
-            storage.add(key, val);
+            storage.add(key, val)?;
 
             Ok(ServerResponse::Empty)
         } else {
@@ -198,7 +198,7 @@ impl CacheServer {
 
         let listener = UnixListener::bind(socket_path)?;
 
-        let storage_lock = Arc::new(RwLock::new(CredStorage::new()));
+        let storage_lock = Arc::new(RwLock::new(CredStorage::new()?));
 
         Ok(Self { listener, storage_lock })
     }
