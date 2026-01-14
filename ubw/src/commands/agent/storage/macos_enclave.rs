@@ -65,13 +65,11 @@ impl CredStorage {
     where
         K: AsRef<str>,
     {
-        let Some(cipher_text) = self.memory.get(key.as_ref()) else {
-            return None;
-        };
+        let cipher_text = self.memory.get(key.as_ref())?;
 
         let ret = self.key.decrypt_data(
             security_framework::key::Algorithm::ECIESEncryptionCofactorVariableIVX963SHA256AESGCM,
-            &cipher_text,
+            cipher_text,
         );
 
         let plain = match ret {
@@ -82,10 +80,7 @@ impl CredStorage {
             }
         };
 
-        match String::from_utf8(plain) {
-            Ok(v) => Some(v),
-            Err(_) => None,
-        }
+        String::from_utf8(plain).ok()
     }
 
     pub fn remove<K>(&mut self, key: K)

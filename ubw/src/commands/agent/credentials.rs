@@ -227,7 +227,8 @@ impl CacheServer {
                     //
                     // spawn a task for this client
                     //
-                    let handler = ClientHandler::new(self.storage_lock.clone());
+
+                    let handler = ClientHandler::new( Arc::clone(&self.storage_lock));
 
                     clients_set.spawn(async move {
                         handler.client_handler(client).await
