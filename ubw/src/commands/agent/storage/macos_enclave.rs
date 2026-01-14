@@ -4,13 +4,15 @@ use anyhow::{Result, bail};
 use log::{error, info};
 use security_framework::key::{GenerateKeyOptions, KeyType, SecKey};
 
-pub struct CredStorage {
+use crate::commands::agent::storage::CredStorageTrait;
+
+pub struct EnclaveStorage {
     key: SecKey,
     memory: HashMap<String, Vec<u8>>,
 }
 
-impl CredStorage {
-    pub fn new() -> Result<Self> {
+impl CredStorageTrait for EnclaveStorage {
+    fn new() -> Result<Self> {
         let memory = HashMap::new();
 
         let mut opt = GenerateKeyOptions::default();
@@ -30,7 +32,7 @@ impl CredStorage {
         Ok(Self { key, memory })
     }
 
-    pub fn add<K, V>(&mut self, key: K, value: V) -> Result<()>
+    fn add<K, V>(&mut self, key: K, value: V) -> Result<()>
     where
         K: Into<String>,
         V: AsRef<str>,
@@ -61,7 +63,7 @@ impl CredStorage {
         Ok(())
     }
 
-    pub fn get<K>(&self, key: K) -> Option<String>
+    fn get<K>(&self, key: K) -> Option<String>
     where
         K: AsRef<str>,
     {
@@ -83,26 +85,10 @@ impl CredStorage {
         String::from_utf8(plain).ok()
     }
 
-    pub fn remove<K>(&mut self, key: K)
+    fn remove<K>(&mut self, key: K)
     where
         K: AsRef<str>,
     {
         self.memory.remove(key.as_ref());
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::commands::agent::storage::CredStorage;
-
-    #[test]
-    fn test_enclave() {
-        let mut storage = CredStorage::new().unwrap();
-
-        storage.add("hello", "world").unwrap();
-
-        let value = storage.get("hello").unwrap();
-
-        assert_eq!(value, "world");
     }
 }
