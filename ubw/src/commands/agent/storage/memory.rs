@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use secrecy::{ExposeSecret, SecretBox};
 
 use crate::commands::agent::storage::CredStorageTrait;
 
 pub struct MemoryStorage {
-    memory: HashMap<String, String>,
+    memory: HashMap<String, SecretBox<String>>,
 }
 
 impl CredStorageTrait for MemoryStorage {
@@ -20,7 +21,9 @@ impl CredStorageTrait for MemoryStorage {
         K: Into<String>,
         V: AsRef<str>,
     {
-        self.memory.insert(key.into(), value.as_ref().into());
+        let secret_value = SecretBox::new(Box::new(value.as_ref().to_string()));
+        self.memory.insert(key.into(), secret_value);
+
         Ok(())
     }
 
@@ -28,7 +31,8 @@ impl CredStorageTrait for MemoryStorage {
     where
         K: AsRef<str>,
     {
-        self.memory.get(key.as_ref()).cloned()
+        let secret_value = self.memory.get(key.as_ref())?;
+        Some(secret_value.expose_secret().to_string())
     }
 
     fn remove<K>(&mut self, key: K)

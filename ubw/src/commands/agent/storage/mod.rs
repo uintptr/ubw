@@ -7,19 +7,27 @@ mod memory;
 pub use memory::MemoryStorage as CredStorage;
 
 #[cfg(target_os = "macos")]
-mod macos_enclave;
+mod macos;
 
 #[cfg(target_os = "macos")]
-pub use macos_enclave::EnclaveStorage as CredStorage;
+pub use macos::EnclaveStorage as CredStorage;
 
 // In storage/mod.rs or a dedicated trait file
 pub trait CredStorageTrait {
     fn new() -> Result<Self>
     where
         Self: Sized;
-    fn add<K: Into<String>, V: AsRef<str>>(&mut self, key: K, value: V) -> Result<()>;
-    fn get<K: AsRef<str>>(&self, key: K) -> Option<String>;
-    fn remove<K: AsRef<str>>(&mut self, key: K);
+
+    fn add<K, V>(&mut self, key: K, value: V) -> Result<()>
+    where
+        K: Into<String>,
+        V: AsRef<str>;
+    fn get<K>(&self, key: K) -> Option<String>
+    where
+        K: AsRef<str>;
+    fn remove<K>(&mut self, key: K)
+    where
+        K: AsRef<str>;
 }
 
 #[cfg(test)]
