@@ -12,7 +12,7 @@ use crate::{api_types::BwAuth, credentials::BwCredentials, crypto::BwCrypt, erro
 
 const BW_SESSION_GRACE: u64 = 30;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct BwSessionData {
     expiry_ts: u64,
     pub email: String,
@@ -37,6 +37,11 @@ impl BwSessionData {
             auth: auth.clone(),
             key,
         })
+    }
+
+    pub fn expired(&self) -> Result<bool> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        Ok(now > self.expiry_ts)
     }
 }
 

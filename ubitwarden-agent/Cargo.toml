@@ -6,6 +6,9 @@ edition.workspace = true
 [dependencies]
 dirs.workspace = true
 log.workspace = true
+orion.workspace = true
+ring.workspace = true
+rstaples.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

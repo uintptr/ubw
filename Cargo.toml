@@ -26,6 +26,7 @@ localauthentication-rs = "0.1"
 log = "0.4"
 nix = { version = "0.30", features = ["user"] }
 num_enum = "0.7"
+orion = "0.17.12"
 pidlock = "0.2"
 rand = "0.8"
 reqwest = { version = "0.13", default-features = false, features = [
@@ -33,6 +34,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "rustls"
 ] }
+ring = "0.17"
 rsa = "0.9"
 rstaples = "0.4"
 rust-embed = "8.10"
@@ -51,8 +53,10 @@ tokio = { version = "1.49", features = ["full"] }
 totp-rs = { version = "5.7", features = ["otpauth"] }
 whoami = "2"
 x11rb = { version = "0.13", features = ["allow-unsafe-code", "randr"] }
-zeroize = "1.8"
 
+#
+# LINT
+#
 [workspace.lints.clippy]
 arithmetic_side_effects = "warn"
 # Correctness lints
@@ -80,6 +84,9 @@ unimplemented = "warn"  # Catch placeholder implementations
 unwrap_used = "warn"
 use_debug = "warn"  # Catch Debug formatting in production
 
+#
+# BUILD / LINK
+#
 [profile.release]
 opt-level = "s"
 lto = true

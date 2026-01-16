@@ -19,6 +19,7 @@ libc.workspace = true
 log.workspace = true
 nix.workspace = true
 reqwest.workspace = true
+ring.workspace = true
 rstaples.workspace = true
 rust-embed.workspace = true
 secrecy.workspace = true
@@ -31,7 +32,6 @@ tokio.workspace = true
 ubitwarden = { path = "../ubitwarden-api" }
 ubitwarden-agent = { path = "../ubitwarden-agent" }
 x11rb.workspace = true
-zeroize.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework.workspace = true

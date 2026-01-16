@@ -7,8 +7,10 @@ use tokio::{
 };
 use ubitwarden::{api::BwApi, credentials::BwCredentials, error::Result, session::BwSession};
 
+use crate::encrypted_channel::EncryptedChannel;
+
 pub struct UBWAgent {
-    stream: UnixStream,
+    stream: EncryptedChannel<UnixStream>,
 }
 
 pub const UBW_DATA_DIR: &str = env!("CARGO_PKG_NAME");
@@ -18,6 +20,7 @@ impl UBWAgent {
         let socket_name = UBWAgent::create_socket_name()?;
 
         let stream = UnixStream::connect(socket_name).await?;
+        let stream = EncryptedChannel::connect(stream).await?;
 
         Ok(Self { stream })
     }

@@ -1,8 +1,12 @@
 use std::{fs, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::Args;
 use log::{error, info, warn};
+use ring::{
+    agreement::{self, EphemeralPrivateKey},
+    rand,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
@@ -33,6 +37,7 @@ struct ClientHandler {
 }
 
 pub struct CacheServer {
+    pkey: EphemeralPrivateKey,
     listener: UnixListener,
     storage_lock: Arc<RwLock<CredStorage>>,
 }
@@ -190,6 +195,12 @@ impl CacheServer {
     pub fn new() -> Result<Self> {
         info!("binding unix socket");
 
+        let rng = rand::SystemRandom::new();
+
+        let Ok(pkey) = agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng) else {
+            bail!("Unable to create private key");
+        };
+
         let socket_path = UBWAgent::create_socket_name()?;
 
         if socket_path.exists() {
@@ -200,7 +211,11 @@ impl CacheServer {
 
         let storage_lock = Arc::new(RwLock::new(CredStorage::new()?));
 
-        Ok(Self { listener, storage_lock })
+        Ok(Self {
+            pkey,
+            listener,
+            storage_lock,
+        })
     }
 
     pub async fn accept_loop(&self, mut quit_rx: Receiver<bool>) -> Result<()> {

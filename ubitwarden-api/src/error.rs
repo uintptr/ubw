@@ -46,6 +46,18 @@ pub enum Error {
     UnknownTypeInt(u64),
     #[error("Basename failure")]
     BasenameError,
+    #[error("Invalid Command")]
+    CommandInvalid,
+    #[error("Command Data Missing")]
+    CommandDataMissing,
+    #[error("Key Generation Failure")]
+    KeyGenFailure,
+    #[error("Key Agreement Failure")]
+    KeyAgreementFailure,
+    #[error("Hello Failure")]
+    HelloFailure,
+    #[error("Invaliud Command Response")]
+    InvalidCommandResponse,
 
     //
     // 2d party
