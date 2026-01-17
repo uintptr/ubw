@@ -226,9 +226,9 @@ impl BwApi {
         let cipher = self.cipher(auth, id).await?;
 
         if let BwCipherData::Login(login) = cipher.data
-            && let Some(encrypted_totp) = login.totp
+            && let Some(encrypted_totp) = &login.totp
         {
-            Ok(encrypted_totp)
+            Ok(encrypted_totp.to_string())
         } else {
             Err(Error::TotpNotFound)
         }

@@ -3,7 +3,7 @@ resolver = "2"
 members = ["ubitwarden-agent", "ubitwarden-api", "ubw", "ubw-moz"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 
 [workspace.dependencies]
@@ -51,6 +51,7 @@ tokio = { version = "1.49", features = ["full"] }
 totp-rs = { version = "5.7", features = ["otpauth"] }
 whoami = "2"
 x11rb = { version = "0.13", features = ["allow-unsafe-code", "randr"] }
+zeroize = "1.8"
 
 #
 # LINT

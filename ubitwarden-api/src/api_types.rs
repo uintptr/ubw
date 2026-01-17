@@ -2,10 +2,11 @@ use derive_more::Display;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use serde_repr::Deserialize_repr;
+use zeroize::ZeroizeOnDrop;
 
 use crate::session::BwSession;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct BwAuth {
     #[serde(rename = "KdfIterations")]
     pub kdf_iterations: u32,
@@ -17,7 +18,7 @@ pub struct BwAuth {
     pub scope: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ZeroizeOnDrop)]
 pub struct BwProfile {
     pub email: String,
     pub premium: bool,
@@ -61,7 +62,7 @@ pub struct BwLogin {
     #[serde(rename = "autofillOnPageLoad")]
     pub autofill_on_page_load: Option<bool>,
     pub uri: Option<String>,
-    pub uris: Option<Vec<serde_json::Value>>,
+    //pub uris: Option<Vec<serde_json::Value>>,
 }
 
 //
@@ -76,7 +77,7 @@ pub struct BwNote {
 //
 // type = 3
 //
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ZeroizeOnDrop)]
 pub struct BwCard {
     #[serde(rename = "cardholderName")]
     pub cardholder_name: Option<String>,
@@ -92,7 +93,7 @@ pub struct BwCard {
 //
 // type = 4
 //
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ZeroizeOnDrop)]
 pub struct BwIdentity {
     pub username: Option<String>,
     #[serde(rename = "firstName")]
@@ -106,7 +107,7 @@ pub struct BwIdentity {
 //
 // type = 5
 //
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ZeroizeOnDrop)]
 pub struct BwSshKey {
     pub name: Option<String>,
     #[serde(rename = "keyFingerprint")]

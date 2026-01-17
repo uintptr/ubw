@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-
 use anyhow::{Result, bail};
 use log::error;
 use security_framework::key::{GenerateKeyOptions, KeyType, SecKey};
+use std::collections::HashMap;
 
 use crate::commands::agent::storage::CredStorageTrait;
 
@@ -42,7 +41,7 @@ impl CredStorageTrait for EnclaveStorage {
 
             let ret = public_key.encrypt_data(
                 security_framework::key::Algorithm::ECIESEncryptionCofactorVariableIVX963SHA256AESGCM,
-                data,
+                &data,
             );
 
             let ciphertext = match ret {

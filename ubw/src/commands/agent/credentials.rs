@@ -3,6 +3,7 @@ use std::{fs, sync::Arc};
 use anyhow::{Result, bail};
 use clap::Args;
 use log::{error, info, warn};
+use secrecy::zeroize::Zeroize;
 use tokio::{
     net::{UnixListener, UnixStream},
     select,
@@ -74,11 +75,13 @@ impl ClientHandler {
     // Session
     //
     async fn session_store(&self, data: BwSessionData) -> Result<ChannelResponse> {
-        let session_string = serde_json::to_string(&data)?;
+        let mut session_string = serde_json::to_string(&data)?;
 
         let mut store = self.storage_lock.write().await;
 
-        let success = store.add("session", session_string).is_ok();
+        let success = store.add("session", &session_string).is_ok();
+
+        session_string.zeroize();
 
         Ok(ChannelResponse::Status(success))
     }
@@ -86,8 +89,9 @@ impl ClientHandler {
     async fn session_fetch(&self) -> Result<ChannelResponse> {
         let store = self.storage_lock.read().await;
 
-        let res = if let Some(session_string) = store.get("session") {
+        let res = if let Some(mut session_string) = store.get("session") {
             let session: BwSessionData = serde_json::from_str(&session_string)?;
+            session_string.zeroize();
             ChannelResponse::SessionFetch(session)
         } else {
             ChannelResponse::Error("Not Found".to_string())
@@ -111,8 +115,9 @@ impl ClientHandler {
     async fn credentials_fetch(&self) -> Result<ChannelResponse> {
         let store = self.storage_lock.read().await;
 
-        let res = if let Some(creds_string) = store.get("credentials") {
+        let res = if let Some(mut creds_string) = store.get("credentials") {
             let creds: BwCredentials = serde_json::from_str(&creds_string)?;
+            creds_string.zeroize();
             ChannelResponse::CredentialsFetch(creds)
         } else {
             ChannelResponse::Error("Not Found".to_string())
@@ -130,10 +135,12 @@ impl ClientHandler {
     }
 
     async fn credentials_store(&self, creds: BwCredentials) -> Result<ChannelResponse> {
-        let creds_string = serde_json::to_string(&creds)?;
+        let mut creds_string = serde_json::to_string(&creds)?;
         let mut store = self.storage_lock.write().await;
 
-        let success = store.add("credentials", creds_string).is_ok();
+        let success = store.add("credentials", &creds_string).is_ok();
+
+        creds_string.zeroize();
 
         Ok(ChannelResponse::Status(success))
     }

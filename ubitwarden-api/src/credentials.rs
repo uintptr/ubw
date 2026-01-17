@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
+use zeroize::ZeroizeOnDrop;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct BwCredentials {
     pub email: String,
     pub password: String,

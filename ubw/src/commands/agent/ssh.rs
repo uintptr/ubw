@@ -174,10 +174,10 @@ impl Session for BwSshAgent {
         for ssh_key in ssh_keys {
             // Decrypt the fingerprint to use as comment
 
-            let name = if let Some(v) = ssh_key.name {
+            let name = if let Some(v) = &ssh_key.name {
                 v
             } else {
-                ssh_key.key_fingerprint
+                &ssh_key.key_fingerprint
             };
 
             let comment = match crypt.decrypt(&name) {
