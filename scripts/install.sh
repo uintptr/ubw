@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-REPO="bender/ubw"
+REPO="uintptr/ubw"
 INSTALL_DIR="${HOME}/.local/bin"
 
 # Detect OS and architecture
