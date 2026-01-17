@@ -3,6 +3,14 @@ set -euo pipefail
 
 REPO="uintptr/ubw"
 INSTALL_DIR="${HOME}/.local/bin"
+TMP_DIR=""
+
+cleanup() {
+    if [ -n "${TMP_DIR}" ] && [ -d "${TMP_DIR}" ]; then
+        rm -rf "${TMP_DIR}"
+    fi
+}
+trap cleanup EXIT INT TERM
 
 # Detect OS and architecture
 detect_platform() {
@@ -56,25 +64,24 @@ main() {
     mkdir -p "${INSTALL_DIR}"
 
     # Download binaries
-    tmp_dir=$(mktemp -d)
-    trap 'rm -rf "${tmp_dir}"' EXIT
+    TMP_DIR=$(mktemp -d)
 
     echo "Downloading ubw from ${ubw_url}..."
-    if ! curl -fsSL -o "${tmp_dir}/ubw" "${ubw_url}"; then
+    if ! curl -fsSL -o "${TMP_DIR}/ubw" "${ubw_url}"; then
         echo "Error: Failed to download ubw" >&2
         exit 1
     fi
 
     echo "Downloading ubwmoz from ${ubwmoz_url}..."
-    if ! curl -fsSL -o "${tmp_dir}/ubwmoz" "${ubwmoz_url}"; then
+    if ! curl -fsSL -o "${TMP_DIR}/ubwmoz" "${ubwmoz_url}"; then
         echo "Error: Failed to download ubwmoz" >&2
         exit 1
     fi
 
     # Install binaries
-    chmod +x "${tmp_dir}/ubw" "${tmp_dir}/ubwmoz"
-    mv "${tmp_dir}/ubw" "${INSTALL_DIR}/ubw"
-    mv "${tmp_dir}/ubwmoz" "${INSTALL_DIR}/ubwmoz"
+    chmod +x "${TMP_DIR}/ubw" "${TMP_DIR}/ubwmoz"
+    mv "${TMP_DIR}/ubw" "${INSTALL_DIR}/ubw"
+    mv "${TMP_DIR}/ubwmoz" "${INSTALL_DIR}/ubwmoz"
 
     echo ""
     echo "Successfully installed ubw and ubwmoz to ${INSTALL_DIR}"
