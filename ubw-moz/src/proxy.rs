@@ -274,9 +274,8 @@ impl UBwProxy {
     }
 
     async fn get_vault_key(&self) -> Result<String> {
-        let mut agent = UBWAgent::new().await?;
-        let session = agent.load_session().await?;
-
+        let mut agent = UBWAgent::client().await?;
+        let session = agent.session_load().await?;
         Ok(session.export_key())
     }
 

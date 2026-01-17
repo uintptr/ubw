@@ -150,19 +150,19 @@ where
 }
 
 pub async fn login_from_cache() -> Result<UBWAgent> {
-    let mut agent = if let Ok(v) = UBWAgent::new().await {
+    let mut agent = if let Ok(v) = UBWAgent::client().await {
         v
     } else {
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;
-        UBWAgent::new().await?
+        UBWAgent::client().await?
     };
 
     let cache = LoginConfigData::from_file()?;
 
-    if agent.fetch_credentials().await.is_err() {
+    if agent.credentials_fetch().await.is_err() {
         let password = ask_password(&cache.email, &cache.server_url).await?;
-        agent.store_credentials(&cache.email, &cache.server_url, password).await?;
+        agent.credentials_store(&cache.email, &cache.server_url, password).await?;
         LoginConfigData::new(&cache.email, &cache.server_url).sync()?;
     }
 
@@ -174,9 +174,9 @@ pub async fn command_logins() -> Result<()> {
         bail!("Not logged in ({e})");
     }
 
-    let mut agent = UBWAgent::new().await?;
+    let mut agent = UBWAgent::client().await?;
 
-    let session = agent.load_session().await?;
+    let session = agent.session_load().await?;
 
     let api = BwApi::new(&session.email, &session.server_url)?;
 
@@ -195,12 +195,12 @@ pub async fn command_logins() -> Result<()> {
 }
 
 pub async fn command_auth(args: AuthArgs) -> Result<()> {
-    let mut agent = if let Ok(v) = UBWAgent::new().await {
+    let mut agent = if let Ok(v) = UBWAgent::client().await {
         v
     } else {
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;
-        UBWAgent::new().await?
+        UBWAgent::client().await?
     };
 
     if !args.force {
@@ -210,7 +210,7 @@ pub async fn command_auth(args: AuthArgs) -> Result<()> {
         //
         // This way "ubw login" can be used multiple times without prompting
         //
-        if agent.fetch_credentials().await.is_ok() {
+        if agent.credentials_fetch().await.is_ok() {
             info!("already authenticated");
             return Ok(());
         }
@@ -239,14 +239,14 @@ pub async fn command_auth(args: AuthArgs) -> Result<()> {
     let password = ask_password(&email, &server_url).await?;
 
     info!("storing password");
-    agent.store_credentials(email, server_url, password).await?;
-    agent.fetch_credentials().await?;
+    agent.credentials_store(email, server_url, password).await?;
+    agent.credentials_fetch().await?;
 
     LoginConfigData::new(email, server_url).sync()
 }
 
 pub async fn command_logout() -> Result<()> {
-    let Ok(mut agent) = UBWAgent::new().await else {
+    let Ok(mut agent) = UBWAgent::client().await else {
         //
         // not running nothing to do
         //
@@ -254,15 +254,15 @@ pub async fn command_logout() -> Result<()> {
         return Ok(());
     };
 
-    if agent.fetch_credentials().await.is_ok() {
+    if agent.credentials_fetch().await.is_ok() {
         info!("deleting credentials");
-        if let Err(e) = agent.delete_credentials().await {
+        if let Err(e) = agent.credentials_delete().await {
             error!("unable to delete credentials ({e})");
             return Err(e.into());
         }
     }
 
-    if agent.fetch_session().await.is_ok() {
+    if agent.session_fetch().await.is_ok() {
         info!("deleting session");
 
         if let Err(e) = agent.delete_session().await {

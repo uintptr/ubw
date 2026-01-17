@@ -28,6 +28,8 @@ pub enum Error {
     InvalidCommandFormat,
     #[error("Command not found: {command}")]
     CommandNotFound { command: String },
+    #[error("Command Not Implemented")]
+    CommandNotImplemented,
     #[error("Command empty key")]
     CommandEmptyKey,
     #[error("Command empty value")]
@@ -46,6 +48,18 @@ pub enum Error {
     UnknownTypeInt(u64),
     #[error("Basename failure")]
     BasenameError,
+    #[error("Invalid Command")]
+    CommandInvalid,
+    #[error("Command Data Missing")]
+    CommandDataMissing,
+    #[error("Key Generation Failure")]
+    KeyGenFailure,
+    #[error("Key Agreement Failure")]
+    KeyAgreementFailure,
+    #[error("Hello Failure")]
+    HelloFailure,
+    #[error("Invaliud Command Response")]
+    InvalidCommandResponse,
 
     //
     // 2d party
@@ -78,4 +92,6 @@ pub enum Error {
     SendBoolError(#[from] tokio::sync::watch::error::SendError<bool>),
     #[error(transparent)]
     WhoAmIError(#[from] whoami::Error),
+    #[error(transparent)]
+    CrytoError(#[from] orion::errors::UnknownCryptoError),
 }

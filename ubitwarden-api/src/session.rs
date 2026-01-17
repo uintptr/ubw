@@ -8,11 +8,16 @@ use std::{
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 
-use crate::{api_types::BwAuth, credentials::BwCredentials, crypto::BwCrypt, error::Result};
+use crate::{
+    api_types::BwAuth,
+    credentials::BwCredentials,
+    crypto::BwCrypt,
+    error::{Error, Result},
+};
 
 const BW_SESSION_GRACE: u64 = 30;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct BwSessionData {
     expiry_ts: u64,
     pub email: String,
@@ -37,6 +42,11 @@ impl BwSessionData {
             auth: auth.clone(),
             key,
         })
+    }
+
+    pub fn expired(&self) -> Result<bool> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        Ok(now > self.expiry_ts)
     }
 }
 
@@ -87,6 +97,22 @@ impl FromStr for BwSession {
         };
 
         Ok(Self { inner, crypt })
+    }
+}
+
+impl TryFrom<BwSessionData> for BwSession {
+    type Error = Error;
+
+    fn try_from(data: BwSessionData) -> std::result::Result<Self, Self::Error> {
+        let crypt = match BwCrypt::from_encoded_key(&data.key) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Unable to load key from session data ({e})");
+                return Err(e);
+            }
+        };
+
+        Ok(Self { inner: data, crypt })
     }
 }
 
