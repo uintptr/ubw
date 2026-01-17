@@ -258,15 +258,15 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
 }
 
 async fn store_password(args: &XSecureLockArgs, password: &str) -> Result<()> {
-    let mut agent = if let Ok(v) = UBWAgent::new().await {
+    let mut agent = if let Ok(v) = UBWAgent::client().await {
         v
     } else {
         info!("unable to talk to the server. spawning a new one");
         spawn_server().await?;
-        UBWAgent::new().await?
+        UBWAgent::client().await?
     };
 
-    agent.store_credentials(&args.email, &args.server_url, password).await?;
+    agent.credentials_store(&args.email, &args.server_url, password).await?;
 
     Ok(())
 }
