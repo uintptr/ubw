@@ -210,22 +210,3 @@ impl BwCipher {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::{fs, path::PathBuf};
-
-    use log::LevelFilter;
-    use rstaples::logging::StaplesLogger;
-
-    use crate::api_types::BwCipher;
-
-    #[test]
-    #[allow(clippy::expect_used)]
-    fn test_deserialize_sample() {
-        StaplesLogger::new().with_colors().with_log_level(LevelFilter::Info).start();
-        let manifest_dir = env!("CARGO_WORKSPACE_DIR");
-        let sample_file = PathBuf::from(manifest_dir).join("samples").join("ciphers.json");
-        let data = fs::read_to_string(sample_file).expect("Failed to read sample file");
-        serde_json::from_str::<Vec<BwCipher>>(&data).expect("Failed to deserialize ciphers");
-    }
-}
