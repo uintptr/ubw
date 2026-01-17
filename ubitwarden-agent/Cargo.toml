@@ -13,5 +13,8 @@ tokio.workspace = true
 ubitwarden = { path = "../ubitwarden-api" }
 whoami.workspace = true
 
+[dev-dependencies]
+rstaples.workspace = true
+
 [lints]
 workspace = true
