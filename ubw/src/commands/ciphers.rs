@@ -37,7 +37,7 @@ fn get_totp(sessions: &BwSession, cipher: &BwCipher) -> Result<String> {
     }
 }
 
-fn display_ciphers(session: &BwSession, ciphers: &[BwCipher], filter: Option<String>) -> Result<()> {
+fn display_ciphers(session: &BwSession, ciphers: &[BwCipher], filter: Option<&String>) -> Result<()> {
     let mut cipher_table = Vec::new();
 
     for c in ciphers {
@@ -45,7 +45,7 @@ fn display_ciphers(session: &BwSession, ciphers: &[BwCipher], filter: Option<Str
 
         let name: String = session.decrypt(&c.name)?.try_into()?;
 
-        if let Some(filter) = &filter
+        if let Some(filter) = filter
             && !name.contains(filter)
         {
             continue;
@@ -84,7 +84,7 @@ pub async fn command_ciphers(args: CiphersArgs) -> Result<()> {
 
     let ciphers = api.ciphers(&session.auth).await?;
 
-    display_ciphers(&session, &ciphers, args.filter)
+    display_ciphers(&session, &ciphers, args.filter.as_ref())
 }
 
 pub async fn command_cipher<I>(id: I) -> Result<()>
