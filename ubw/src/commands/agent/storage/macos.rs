@@ -41,7 +41,7 @@ impl CredStorageTrait for EnclaveStorage {
 
             let ret = public_key.encrypt_data(
                 security_framework::key::Algorithm::ECIESEncryptionCofactorVariableIVX963SHA256AESGCM,
-                &data,
+                data,
             );
 
             let ciphertext = match ret {
