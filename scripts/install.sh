@@ -83,7 +83,6 @@ main() {
     mv "${TMP_DIR}/ubw" "${INSTALL_DIR}/ubw"
     mv "${TMP_DIR}/ubwmoz" "${INSTALL_DIR}/ubwmoz"
 
-    echo ""
     echo "Successfully installed ubw and ubwmoz to ${INSTALL_DIR}"
 
     # Check if install dir is in PATH
