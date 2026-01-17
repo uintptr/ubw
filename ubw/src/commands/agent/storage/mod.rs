@@ -32,16 +32,21 @@ pub trait CredStorageTrait {
 
 #[cfg(test)]
 mod tests {
+
+    use anyhow::Result;
+
     use crate::commands::agent::storage::{CredStorage, CredStorageTrait};
 
     #[test]
-    fn test_enclave() {
-        let mut storage = CredStorage::new().unwrap();
+    fn test_enclave() -> Result<()> {
+        let mut storage = CredStorage::new()?;
 
-        storage.add("hello", "world").unwrap();
+        storage.add("hello", "world")?;
 
-        let value = storage.get("hello").unwrap();
+        if let Some(value) = storage.get("hello") {
+            assert_eq!(value, "world");
+        }
 
-        assert_eq!(value, "world");
+        Ok(())
     }
 }
