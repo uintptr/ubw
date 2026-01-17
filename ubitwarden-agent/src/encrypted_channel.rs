@@ -3,34 +3,26 @@ use std::{
     task::{Context, Poll},
 };
 
-use ring::{
-    agreement,
-    hkdf::{self, HKDF_SHA256, KeyType},
-    rand,
+use log::info;
+use orion::{
+    aead,
+    kex::{EphemeralClientSession, EphemeralServerSession, PublicKey, SessionKeys},
 };
 
-use log::error;
 use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use ubitwarden::error::{Error, Result};
 
-use crate::messages::{ChannelRequest, UBWChannelMessage};
+use crate::messages::{ChannelRequest, ChannelResponse};
 
 use crate::channel::AgentChannelTrait;
-
-const SESSION_KEY_LEN: usize = 32;
-
-struct SessionKeyType;
-
-impl KeyType for SessionKeyType {
-    fn len(&self) -> usize {
-        SESSION_KEY_LEN
-    }
-}
 
 #[derive(Debug)]
 pub struct EncryptedChannel<S> {
     stream: S,
-    session_key: [u8; SESSION_KEY_LEN],
+    session_keys: SessionKeys,
+    read_buf: Vec<u8>,
+    decrypted_buf: Vec<u8>,
+    expected_len: Option<u32>,
 }
 
 impl<S> EncryptedChannel<S>
@@ -38,118 +30,84 @@ where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     pub async fn listen(mut stream: S) -> Result<Self> {
-        let rng = rand::SystemRandom::new();
+        let session_server = EphemeralServerSession::new()?;
+        let server_public_key = session_server.public_key();
 
-        let my_private_key = match agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng) {
-            Ok(v) => v,
-            Err(e) => {
-                error!("{e}");
-                return Err(Error::KeyGenFailure);
-            }
-        };
-
-        let my_public_key = my_private_key.compute_public_key().map_err(|_| Error::KeyGenFailure)?;
+        let server_public_key_slice = server_public_key.to_bytes();
 
         //
         // read the client's public key
         //
-        let req: UBWChannelMessage = UBWChannelMessage::read(&mut stream).await?;
+        let req: ChannelRequest = ChannelRequest::read(&mut stream).await?;
 
         let ChannelRequest::Hello {
-            public_key: peer_public_key_bytes,
-        } = req.message
+            public_key: peer_public_key,
+        } = req
         else {
-            return Err(Error::CommandInvalid);
+            return Err(Error::KeyAgreementFailure);
         };
 
         //
-        // send our public key
+        // Send our public key
         //
-        let hello = ChannelRequest::Hello {
-            public_key: my_public_key.as_ref().into(),
+        let resp = ChannelResponse::Hello {
+            public_key: server_public_key_slice.to_vec(),
         };
 
-        UBWChannelMessage::new(hello).write(&mut stream).await?;
+        resp.write(&mut stream).await?;
 
-        //
-        // derive session key
-        //
-        let peer_public_key = agreement::UnparsedPublicKey::new(&agreement::X25519, peer_public_key_bytes.clone());
+        let client_public_key = PublicKey::from_slice(&peer_public_key)?;
+        let session_keys: SessionKeys = session_server.establish_with_client(&client_public_key)?;
 
-        let session_key = agreement::agree_ephemeral(my_private_key, &peer_public_key, |key_material| {
-            // Role-based ordering: initiator's public key first, responder's second
-            // We are the responder, so: initiator (peer) || responder (us)
-            let mut info = Vec::with_capacity(64);
-            info.extend_from_slice(&peer_public_key_bytes);
-            info.extend_from_slice(my_public_key.as_ref());
+        info!("server handshake completed");
 
-            let salt = hkdf::Salt::new(HKDF_SHA256, b"ubw-agent-channel");
-            let prk = salt.extract(key_material);
-            let info_refs: &[&[u8]] = &[&info];
-            let okm = prk.expand(info_refs, SessionKeyType).expect("HKDF expand failed");
-
-            let mut session_key = [0u8; SESSION_KEY_LEN];
-            okm.fill(&mut session_key).expect("HKDF fill failed");
-
-            session_key
+        Ok(Self {
+            stream,
+            session_keys,
+            read_buf: Vec::new(),
+            decrypted_buf: Vec::new(),
+            expected_len: None,
         })
-        .map_err(|_| Error::KeyAgreementFailure)?;
-
-        Ok(EncryptedChannel { stream, session_key })
     }
 
     pub async fn connect(mut stream: S) -> Result<Self> {
-        let rng = rand::SystemRandom::new();
+        let session_client = EphemeralClientSession::new()?;
+        let client_public_key = session_client.public_key().clone();
 
-        let my_private_key = match agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng) {
-            Ok(v) => v,
-            Err(e) => {
-                error!("{e}");
-                return Err(Error::KeyGenFailure);
-            }
-        };
-
-        let my_public_key = my_private_key.compute_public_key().map_err(|_| Error::KeyGenFailure)?;
+        let client_public_key_slice = client_public_key.to_bytes();
 
         //
-        // send the hello message
+        // Send out public key across
         //
-        let hello = ChannelRequest::Hello {
-            public_key: my_public_key.as_ref().into(),
+        let msg = ChannelRequest::Hello {
+            public_key: client_public_key_slice.to_vec(),
         };
-        UBWChannelMessage::new(hello).write(&mut stream).await?;
+        msg.write(&mut stream).await?;
 
-        let res: UBWChannelMessage = UBWChannelMessage::read(&mut stream).await?;
+        //
+        // read the server's public key
+        //
+        let res: ChannelResponse = ChannelResponse::read(&mut stream).await?;
 
-        let ChannelRequest::Hello {
-            public_key: peer_public_key_bytes,
-        } = res.message
+        let ChannelResponse::Hello {
+            public_key: peer_public_key,
+        } = res
         else {
-            return Err(Error::CommandInvalid);
+            return Err(Error::KeyAgreementFailure);
         };
 
-        let peer_public_key = agreement::UnparsedPublicKey::new(&agreement::X25519, peer_public_key_bytes.clone());
+        let server_public_key = PublicKey::from_slice(&peer_public_key)?;
+        let session_keys: SessionKeys = session_client.establish_with_server(&server_public_key)?;
 
-        let session_key = agreement::agree_ephemeral(my_private_key, &peer_public_key, |key_material| {
-            // Role-based ordering: initiator's public key first, responder's second
-            // We are the initiator, so: initiator (us) || responder (peer)
-            let mut info = Vec::with_capacity(64);
-            info.extend_from_slice(my_public_key.as_ref());
-            info.extend_from_slice(&peer_public_key_bytes);
+        info!("client handshake completed");
 
-            let salt = hkdf::Salt::new(HKDF_SHA256, b"ubw-agent-channel");
-            let prk = salt.extract(key_material);
-            let info_refs: &[&[u8]] = &[&info];
-            let okm = prk.expand(info_refs, SessionKeyType).expect("HKDF expand failed");
-
-            let mut session_key = [0u8; SESSION_KEY_LEN];
-            okm.fill(&mut session_key).expect("HKDF fill failed");
-
-            session_key
+        Ok(Self {
+            stream,
+            session_keys,
+            read_buf: Vec::new(),
+            decrypted_buf: Vec::new(),
+            expected_len: None,
         })
-        .map_err(|_| Error::KeyAgreementFailure)?;
-
-        Ok(EncryptedChannel { stream, session_key })
     }
 }
 
@@ -158,12 +116,21 @@ where
     S: AsyncWrite + Unpin,
 {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-        // For a simple passthrough:
-        Pin::new(&mut self.stream).poll_write(cx, buf)
+        let cipher =
+            aead::seal(self.session_keys.transport(), buf).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-        // For actual encryption, you'd:
-        // 1. Encrypt the data in `buf`
-        // 2. Write the encrypted data to the stream
+        let len: u32 = cipher.len().try_into().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+        let mut framed = Vec::with_capacity(4 + cipher.len());
+        framed.extend_from_slice(&len.to_be_bytes());
+        framed.extend_from_slice(&cipher);
+
+        match Pin::new(&mut self.stream).poll_write(cx, &framed) {
+            Poll::Ready(Ok(n)) if n == framed.len() => Poll::Ready(Ok(buf.len())),
+            Poll::Ready(Ok(_)) => Poll::Ready(Err(io::Error::new(io::ErrorKind::WriteZero, "partial write"))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -180,13 +147,62 @@ where
     S: AsyncRead + Unpin,
 {
     fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
-        // For a simple passthrough (no encryption on raw reads):
-        Pin::new(&mut self.stream).poll_read(cx, buf)
+        loop {
+            // If we have decrypted data waiting, return it first
+            if !self.decrypted_buf.is_empty() {
+                let to_copy = std::cmp::min(buf.remaining(), self.decrypted_buf.len());
+                buf.put_slice(&self.decrypted_buf[..to_copy]);
+                self.decrypted_buf.drain(..to_copy);
+                return Poll::Ready(Ok(()));
+            }
 
-        // For actual encryption, you'd need to:
-        // 1. Read encrypted data into an internal buffer
-        // 2. Decrypt it
-        // 3. Copy decrypted data to `buf`
+            // Try to parse length header if we don't have it yet
+            if self.expected_len.is_none() && self.read_buf.len() >= 4 {
+                let len_bytes: [u8; 4] = self.read_buf[..4].try_into().unwrap();
+                self.expected_len = Some(u32::from_be_bytes(len_bytes));
+                self.read_buf.drain(..4);
+            }
+
+            // Try to decrypt if we have enough data
+            if let Some(expected_len) = self.expected_len {
+                if self.read_buf.len() >= expected_len as usize {
+                    let cipher = &self.read_buf[..expected_len as usize];
+
+                    let plaintext = aead::open(self.session_keys.receiving(), cipher)
+                        .map_err(|_| io::Error::new(io::ErrorKind::Other, "decryption failed"))?;
+
+                    self.read_buf.drain(..expected_len as usize);
+                    self.expected_len = None;
+
+                    // Copy what we can to output, buffer the rest
+                    let to_copy = std::cmp::min(buf.remaining(), plaintext.len());
+                    buf.put_slice(&plaintext[..to_copy]);
+                    if to_copy < plaintext.len() {
+                        self.decrypted_buf.extend_from_slice(&plaintext[to_copy..]);
+                    }
+
+                    return Poll::Ready(Ok(()));
+                }
+            }
+
+            // Need more data - read from the underlying stream
+            let mut temp_buf = [0u8; 4096];
+            let mut temp_read_buf = ReadBuf::new(&mut temp_buf);
+
+            match Pin::new(&mut self.stream).poll_read(cx, &mut temp_read_buf) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                Poll::Ready(Ok(())) => {
+                    let bytes_read = temp_read_buf.filled();
+                    if bytes_read.is_empty() {
+                        // EOF
+                        return Poll::Ready(Ok(()));
+                    }
+                    self.read_buf.extend_from_slice(bytes_read);
+                    // Loop back to try parsing/decrypting with new data
+                }
+            }
+        }
     }
 }
 
@@ -217,6 +233,7 @@ mod tests {
         let client = client.unwrap();
         let server = server.unwrap();
 
-        assert_eq!(client.session_key, server.session_key);
+        assert_eq!(client.session_keys.receiving(), server.session_keys.transport());
+        assert_eq!(client.session_keys.transport(), server.session_keys.receiving());
     }
 }

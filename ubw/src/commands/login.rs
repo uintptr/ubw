@@ -12,9 +12,9 @@ where
         bail!("Not logged in ({e})");
     }
 
-    let mut agent = UBWAgent::new().await?;
+    let mut agent = UBWAgent::client().await?;
 
-    let session = agent.load_session().await?;
+    let session = agent.session_load().await?;
 
     let api = BwApi::new(&session.email, &session.server_url)?;
 
@@ -38,9 +38,9 @@ where
         bail!("Not logged in ({e})");
     }
 
-    let mut agent = UBWAgent::new().await?;
+    let mut agent = UBWAgent::client().await?;
 
-    let session = agent.load_session().await?;
+    let session = agent.session_load().await?;
 
     let api = BwApi::new(&session.email, &session.server_url)?;
 

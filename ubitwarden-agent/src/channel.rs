@@ -3,6 +3,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use ubitwarden::error::Result;
 
 pub trait AgentChannelTrait: Serialize {
+    #[allow(async_fn_in_trait)]
     async fn write<W>(&self, stream: &mut W) -> Result<()>
     where
         W: AsyncWriteExt + Unpin,
@@ -18,6 +19,7 @@ pub trait AgentChannelTrait: Serialize {
         Ok(())
     }
 
+    #[allow(async_fn_in_trait)]
     async fn read<D, R>(stream: &mut R) -> Result<D>
     where
         D: DeserializeOwned,

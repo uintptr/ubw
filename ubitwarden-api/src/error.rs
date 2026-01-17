@@ -28,6 +28,8 @@ pub enum Error {
     InvalidCommandFormat,
     #[error("Command not found: {command}")]
     CommandNotFound { command: String },
+    #[error("Command Not Implemented")]
+    CommandNotImplemented,
     #[error("Command empty key")]
     CommandEmptyKey,
     #[error("Command empty value")]
@@ -90,4 +92,6 @@ pub enum Error {
     SendBoolError(#[from] tokio::sync::watch::error::SendError<bool>),
     #[error(transparent)]
     WhoAmIError(#[from] whoami::Error),
+    #[error(transparent)]
+    CrytoError(#[from] orion::errors::UnknownCryptoError),
 }

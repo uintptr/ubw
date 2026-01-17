@@ -115,7 +115,7 @@ pub async fn spawn_server() -> Result<UBWAgent> {
     // wait until we can ping it
     //
     for i in 0..SPAWN_WAIT_TIMEOUT {
-        if let Ok(a) = UBWAgent::new().await {
+        if let Ok(a) = UBWAgent::client().await {
             return Ok(a);
         }
         info!("server is not ready...{i}/{SPAWN_WAIT_TIMEOUT}");
@@ -126,18 +126,18 @@ pub async fn spawn_server() -> Result<UBWAgent> {
 }
 
 pub async fn command_agent(args: AgentArgs) -> Result<()> {
-    match UBWAgent::new().await {
+    match UBWAgent::client().await {
         Ok(mut v) => {
             //
             // server is running
             //
             if args.stop {
                 warn!("stopping the server");
-                v.stop().await?;
+                v.quit().await?;
 
                 // Wait until ping fails
                 for _ in 0..20 {
-                    if UBWAgent::new().await.is_err() {
+                    if UBWAgent::client().await.is_err() {
                         info!("server stopped");
                         return Ok(());
                     }

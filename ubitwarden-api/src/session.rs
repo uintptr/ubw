@@ -8,7 +8,12 @@ use std::{
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 
-use crate::{api_types::BwAuth, credentials::BwCredentials, crypto::BwCrypt, error::Result};
+use crate::{
+    api_types::BwAuth,
+    credentials::BwCredentials,
+    crypto::BwCrypt,
+    error::{Error, Result},
+};
 
 const BW_SESSION_GRACE: u64 = 30;
 
@@ -92,6 +97,22 @@ impl FromStr for BwSession {
         };
 
         Ok(Self { inner, crypt })
+    }
+}
+
+impl TryFrom<BwSessionData> for BwSession {
+    type Error = Error;
+
+    fn try_from(data: BwSessionData) -> std::result::Result<Self, Self::Error> {
+        let crypt = match BwCrypt::from_encoded_key(&data.key) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Unable to load key from session data ({e})");
+                return Err(e);
+            }
+        };
+
+        Ok(Self { inner: data, crypt })
     }
 }
 

@@ -3,19 +3,17 @@ use std::{fs, sync::Arc};
 use anyhow::{Result, bail};
 use clap::Args;
 use log::{error, info, warn};
-use ring::{
-    agreement::{self, EphemeralPrivateKey},
-    rand,
-};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
     select,
     sync::{RwLock, watch::Receiver},
     task::JoinSet,
 };
-use ubitwarden::error::Error;
-use ubitwarden_agent::agent::UBWAgent;
+use ubitwarden::{credentials::BwCredentials, error::Error, session::BwSessionData};
+use ubitwarden_agent::{
+    agent::{UBWAgent, create_socket_name},
+    messages::{ChannelRequest, ChannelResponse},
+};
 
 use crate::commands::agent::storage::{CredStorage, CredStorageTrait};
 
@@ -26,18 +24,11 @@ pub struct CacheArgs {
     pub stop: bool,
 }
 
-enum ServerResponse {
-    Quit,
-    Empty,
-    String(String),
-}
-
 struct ClientHandler {
     storage_lock: Arc<RwLock<CredStorage>>,
 }
 
 pub struct CacheServer {
-    pkey: EphemeralPrivateKey,
     listener: UnixListener,
     storage_lock: Arc<RwLock<CredStorage>>,
 }
@@ -66,32 +57,6 @@ fn get_peer_pid(client: &UnixStream) -> Result<u32> {
     }
 }
 
-async fn read_string(stream: &mut UnixStream) -> Result<String> {
-    let len = stream.read_i32().await?;
-    let len: usize = len.try_into()?;
-
-    let mut buf = vec![0u8; len];
-
-    stream.read_exact(&mut buf).await?;
-
-    let s = String::from_utf8(buf)?;
-
-    Ok(s)
-}
-
-async fn write_string<S>(stream: &mut UnixStream, input: S) -> Result<()>
-where
-    S: AsRef<str>,
-{
-    let len = input.as_ref().len();
-    let len: i32 = len.try_into()?;
-
-    stream.write_i32(len).await?;
-    stream.write_all(input.as_ref().as_bytes()).await?;
-
-    Ok(())
-}
-
 #[cfg(target_os = "linux")]
 fn verify_client(client: &UnixStream) -> Result<bool> {
     let self_uid = nix::unistd::getuid().as_raw();
@@ -105,64 +70,75 @@ impl ClientHandler {
         Self { storage_lock }
     }
 
-    async fn parse_command_write(&self, kv: &str) -> Result<ServerResponse> {
-        let comp: Vec<&str> = kv.splitn(2, ':').collect();
+    //
+    // Session
+    //
+    async fn session_store(&self, data: BwSessionData) -> Result<ChannelResponse> {
+        let session_string = serde_json::to_string(&data)?;
 
-        if 2 == comp.len() {
-            let key = comp.first().ok_or(Error::CommandEmptyKey)?.to_string();
-            let val = comp.get(1).ok_or(Error::CommandEmptyValue)?.to_string();
+        let mut store = self.storage_lock.write().await;
 
-            info!("writing {key}");
+        let success = store.add("session", session_string).is_ok();
 
-            let mut storage = self.storage_lock.write().await;
-            storage.add(key, val)?;
+        Ok(ChannelResponse::Status(success))
+    }
 
-            Ok(ServerResponse::Empty)
+    async fn session_fetch(&self) -> Result<ChannelResponse> {
+        let store = self.storage_lock.read().await;
+
+        let res = if let Some(session_string) = store.get("session") {
+            let session: BwSessionData = serde_json::from_str(&session_string)?;
+            ChannelResponse::SessionFetch(session)
         } else {
-            error!("invalid command format write");
-            Err(Error::InvalidCommandFormat.into())
-        }
+            ChannelResponse::Error("Not Found".to_string())
+        };
+
+        Ok(res)
     }
 
-    async fn parse_command_read(&self, key: &str) -> ServerResponse {
-        info!("reading {key}");
+    async fn session_delete(&self) -> Result<ChannelResponse> {
+        let mut store = self.storage_lock.write().await;
 
-        let storage = self.storage_lock.read().await;
+        store.remove("session");
 
-        match storage.get(key) {
-            Some(v) => ServerResponse::String(v.clone()),
-            None => ServerResponse::String(String::new()),
-        }
+        Ok(ChannelResponse::Status(true))
     }
 
-    async fn parse_command_delete(&self, key: &str) -> ServerResponse {
-        info!("deleting {key}");
+    //
+    // Credentials
+    //
 
-        let mut storage = self.storage_lock.write().await;
+    async fn credentials_fetch(&self) -> Result<ChannelResponse> {
+        let store = self.storage_lock.read().await;
 
-        storage.remove(key);
-        ServerResponse::Empty
-    }
-
-    async fn parse_command(&self, command: &str) -> Result<ServerResponse> {
-        if let Some(kv) = command.strip_prefix("write:") {
-            self.parse_command_write(kv).await
-        } else if let Some(key) = command.strip_prefix("read:") {
-            Ok(self.parse_command_read(key).await)
-        } else if let Some(key) = command.strip_prefix("delete:") {
-            Ok(self.parse_command_delete(key).await)
-        } else if command.eq("stop") {
-            warn!("asked to stop");
-            Ok(ServerResponse::Quit)
+        let res = if let Some(creds_string) = store.get("credentials") {
+            let creds: BwCredentials = serde_json::from_str(&creds_string)?;
+            ChannelResponse::CredentialsFetch(creds)
         } else {
-            Err(Error::CommandNotFound {
-                command: command.to_string(),
-            }
-            .into())
-        }
+            ChannelResponse::Error("Not Found".to_string())
+        };
+
+        Ok(res)
     }
 
-    async fn client_handler(&self, mut client: UnixStream) -> Result<()> {
+    async fn credentials_delete(&self) -> Result<ChannelResponse> {
+        let mut store = self.storage_lock.write().await;
+
+        store.remove("credentials");
+
+        Ok(ChannelResponse::Status(true))
+    }
+
+    async fn credentials_store(&self, creds: BwCredentials) -> Result<ChannelResponse> {
+        let creds_string = serde_json::to_string(&creds)?;
+        let mut store = self.storage_lock.write().await;
+
+        let success = store.add("credentials", creds_string).is_ok();
+
+        Ok(ChannelResponse::Status(success))
+    }
+
+    async fn client_handler(&self, client: UnixStream) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
             let verified = verify_client(&client)?;
@@ -172,21 +148,35 @@ impl ClientHandler {
             }
         }
 
+        let mut client = UBWAgent::server(client).await?;
+
         loop {
-            info!("waiting for client data");
+            info!("wating for a request");
 
-            let command = read_string(&mut client).await?;
+            let req = client.get_request().await?;
 
-            let response = self.parse_command(&command).await?;
+            info!("Request: {req}");
 
-            match response {
-                ServerResponse::Quit => break Err(Error::Shutdown.into()),
-                ServerResponse::Empty => {}
-                ServerResponse::String(s) => {
-                    write_string(&mut client, s).await?;
-                    client.flush().await?;
-                }
-            }
+            let res = match req {
+                ChannelRequest::Hello { public_key: _ } => bail!("Out of order"),
+                ChannelRequest::Stop => break Err(Error::Shutdown.into()),
+                //
+                // Session
+                //
+                ChannelRequest::SessionStore(data) => self.session_store(data).await?,
+                ChannelRequest::SessionFetch => self.session_fetch().await?,
+                ChannelRequest::SessionDelete => self.session_delete().await?,
+                //
+                // Credentials
+                //
+                ChannelRequest::CredentialsDelete => self.credentials_delete().await?,
+                ChannelRequest::CredentialsFetch => self.credentials_fetch().await?,
+                ChannelRequest::CredentialsStore(creds) => self.credentials_store(creds).await?,
+            };
+
+            info!("Response: {res}");
+
+            client.send_response(res).await?;
         }
     }
 }
@@ -195,13 +185,7 @@ impl CacheServer {
     pub fn new() -> Result<Self> {
         info!("binding unix socket");
 
-        let rng = rand::SystemRandom::new();
-
-        let Ok(pkey) = agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng) else {
-            bail!("Unable to create private key");
-        };
-
-        let socket_path = UBWAgent::create_socket_name()?;
+        let socket_path = create_socket_name()?;
 
         if socket_path.exists() {
             fs::remove_file(&socket_path)?;
@@ -211,11 +195,7 @@ impl CacheServer {
 
         let storage_lock = Arc::new(RwLock::new(CredStorage::new()?));
 
-        Ok(Self {
-            pkey,
-            listener,
-            storage_lock,
-        })
+        Ok(Self { listener, storage_lock })
     }
 
     pub async fn accept_loop(&self, mut quit_rx: Receiver<bool>) -> Result<()> {
@@ -242,7 +222,6 @@ impl CacheServer {
                     //
                     // spawn a task for this client
                     //
-
                     let handler = ClientHandler::new( Arc::clone(&self.storage_lock));
 
                     clients_set.spawn(async move {

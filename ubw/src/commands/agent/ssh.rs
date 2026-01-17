@@ -140,10 +140,10 @@ impl BwSshAgent {
 }
 
 async fn get_remote_keys() -> Result<(BwSession, Vec<BwSshKey>)> {
-    let mut agent = UBWAgent::new().await?;
+    let mut agent = UBWAgent::client().await?;
 
     // Load session and fetch ciphers from Bitwarden
-    let session = agent.load_session().await?;
+    let session = agent.session_load().await?;
 
     // Create API client and fetch all ciphers
     let api = BwApi::new(&session.email, &session.server_url)?;
