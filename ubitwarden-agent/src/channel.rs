@@ -10,7 +10,7 @@ pub trait AgentChannelTrait: Serialize {
     {
         let data = serde_json::to_string(self)?;
 
-        let len: u32 = data.as_bytes().len().try_into()?;
+        let len: u32 = data.len().try_into()?;
 
         stream.write_u32(len).await?;
         stream.write_all(data.as_bytes()).await?;

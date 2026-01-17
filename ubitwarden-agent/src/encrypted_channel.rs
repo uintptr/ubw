@@ -116,11 +116,11 @@ where
     S: AsyncWrite + Unpin,
 {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-        let cipher = aead::seal(self.session_keys.transport(), buf).map_err(|e| io::Error::other(e))?;
+        let cipher = aead::seal(self.session_keys.transport(), buf).map_err(io::Error::other)?;
 
-        let len: u32 = cipher.len().try_into().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let len: u32 = cipher.len().try_into().map_err(io::Error::other)?;
 
-        let mut framed = Vec::with_capacity(4 + cipher.len());
+        let mut framed = Vec::with_capacity(cipher.len().saturating_add(4));
         framed.extend_from_slice(&len.to_be_bytes());
         framed.extend_from_slice(&cipher);
 
@@ -150,38 +150,50 @@ where
             // If we have decrypted data waiting, return it first
             if !self.decrypted_buf.is_empty() {
                 let to_copy = std::cmp::min(buf.remaining(), self.decrypted_buf.len());
-                buf.put_slice(&self.decrypted_buf[..to_copy]);
-                self.decrypted_buf.drain(..to_copy);
-                return Poll::Ready(Ok(()));
+                if let Some(slice) = self.decrypted_buf.get(..to_copy) {
+                    buf.put_slice(slice);
+                    self.decrypted_buf.drain(..to_copy);
+                    return Poll::Ready(Ok(()));
+                }
             }
 
             // Try to parse length header if we don't have it yet
-            if self.expected_len.is_none() && self.read_buf.len() >= 4 {
-                let len_bytes: [u8; 4] = self.read_buf[..4].try_into().unwrap();
+            if self.expected_len.is_none()
+                && self.read_buf.len() >= 4
+                && let Some(header) = self.read_buf.get(..4)
+                && let Ok(len_bytes) = <[u8; 4]>::try_from(header)
+            {
                 self.expected_len = Some(u32::from_be_bytes(len_bytes));
                 self.read_buf.drain(..4);
             }
 
             // Try to decrypt if we have enough data
-            if let Some(expected_len) = self.expected_len {
-                if self.read_buf.len() >= expected_len as usize {
-                    let cipher = &self.read_buf[..expected_len as usize];
+            if let Some(expected_len) = self.expected_len
+                && self.read_buf.len() >= expected_len as usize
+            {
+                let cipher_len = expected_len as usize;
+                let Some(cipher) = self.read_buf.get(..cipher_len) else {
+                    continue;
+                };
 
-                    let plaintext = aead::open(self.session_keys.receiving(), cipher)
-                        .map_err(|_| io::Error::other("decryption failed"))?;
+                let plaintext = aead::open(self.session_keys.receiving(), cipher)
+                    .map_err(|_| io::Error::other("decryption failed"))?;
 
-                    self.read_buf.drain(..expected_len as usize);
-                    self.expected_len = None;
+                self.read_buf.drain(..cipher_len);
+                self.expected_len = None;
 
-                    // Copy what we can to output, buffer the rest
-                    let to_copy = std::cmp::min(buf.remaining(), plaintext.len());
-                    buf.put_slice(&plaintext[..to_copy]);
-                    if to_copy < plaintext.len() {
-                        self.decrypted_buf.extend_from_slice(&plaintext[to_copy..]);
-                    }
-
-                    return Poll::Ready(Ok(()));
+                // Copy what we can to output, buffer the rest
+                let to_copy = std::cmp::min(buf.remaining(), plaintext.len());
+                if let Some(slice) = plaintext.get(..to_copy) {
+                    buf.put_slice(slice);
                 }
+                if let Some(remaining) = plaintext.get(to_copy..)
+                    && !remaining.is_empty()
+                {
+                    self.decrypted_buf.extend_from_slice(remaining);
+                }
+
+                return Poll::Ready(Ok(()));
             }
 
             // Need more data - read from the underlying stream
