@@ -1,56 +1,53 @@
 # Unofficial Bitwarden CLI
 
-# ssh-agent
+An unofficial Bitwarden CLI client with SSH agent support, browser integration, and more.
 
-```
-SSH_AUTH_SOCK=$HOME/.local/share/ubw/ubw.sock
-```
+## Installation
 
-# xsecurelock authenticator
+### Quick Install (Linux/macOS)
 
-```
-export XSECURELOCK_AUTH=/path/to/auth_xss_ubw
-```
-
-```
-cat -p /path/to/auth_xss_ubw
-#!/bin/sh
-ubw x-secure-lock --email email@example.com --server-url https://bw.example.com
-```
-
-# macOS TouchID support
-
-```
-ubw-moz install
-```
-
-# APIs
-
-- /identity/connect/token
-- /api/accounts/profile
-- /api/sync
-
-# Install
-
-## Quick install (Linux/macOS)
-
-```
+```sh
 curl -fsSL https://raw.githubusercontent.com/uintptr/ubw/main/scripts/install.sh | bash
 ```
 
 This installs both `ubw` and `ubwmoz` to `~/.local/bin`.
 
-## From source
+### From Source
 
-```
+```sh
 cargo install --git https://github.com/uintptr/ubw ubw
 cargo install --git https://github.com/uintptr/ubw ubwmoz
 ```
 
-# Install the bitwarden manifest file
+## Features
 
-This is only supported for macOS + TouchID at this point
+### SSH Agent
 
+Set the socket path for the SSH agent:
+
+```sh
+SSH_AUTH_SOCK=$HOME/.local/share/ubw/ubw.sock
 ```
+
+### macOS TouchID Support
+
+Install the browser native messaging manifest for TouchID integration:
+
+```sh
 ubwmoz install
+```
+
+### xsecurelock Authenticator
+
+Configure xsecurelock to use ubw for authentication:
+
+```sh
+export XSECURELOCK_AUTH=/path/to/auth_xss_ubw
+```
+
+Create the authenticator script:
+
+```sh
+#!/bin/sh
+ubw x-secure-lock --email email@example.com --server-url https://bw.example.com
 ```
