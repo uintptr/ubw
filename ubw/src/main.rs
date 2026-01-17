@@ -11,7 +11,7 @@ use ubw::{
     commands::{
         agent::server::{AgentArgs, command_agent},
         auth::{AuthArgs, command_auth, command_logins, command_logout},
-        ciphers::{command_cipher, command_ciphers},
+        ciphers::{CiphersArgs, command_cipher, command_ciphers},
         login::{command_password, command_totp},
         ssh::command_ssh_keys,
         xss::{XSecureLockArgs, command_xsecurelock},
@@ -26,7 +26,7 @@ pub enum Commands {
     /// Create a new session
     Auth(AuthArgs),
     /// List ciphers
-    Ciphers,
+    Ciphers(CiphersArgs),
     /// Pull cipher
     Cipher(IdArgs),
     /// Pull the TOTP for the specified id
@@ -61,7 +61,7 @@ async fn tokio_entry(args: UserArgs) -> Result<()> {
     match args.command {
         Commands::Auth(auth) => command_auth(auth).await,
         Commands::Agent(a) => command_agent(a).await,
-        Commands::Ciphers => command_ciphers().await,
+        Commands::Ciphers(a) => command_ciphers(a).await,
         Commands::Cipher(cipher) => command_cipher(cipher.id).await,
         Commands::Totp(totp) => command_totp(totp.id).await,
         Commands::Password(pass) => command_password(pass.id).await,

@@ -9,7 +9,14 @@ use ubitwarden::{
 use ubitwarden_agent::agent::UBWAgent;
 
 use crate::commands::auth::login_from_cache;
+use clap::Args;
 use log::error;
+
+#[derive(Args)]
+pub struct CiphersArgs {
+    /// filter
+    pub filter: Option<String>,
+}
 
 #[derive(Tabled)]
 struct CipherTable<'a> {
@@ -30,13 +37,19 @@ fn get_totp(sessions: &BwSession, cipher: &BwCipher) -> Result<String> {
     }
 }
 
-fn display_ciphers(session: &BwSession, ciphers: &[BwCipher]) -> Result<()> {
+fn display_ciphers(session: &BwSession, ciphers: &[BwCipher], filter: Option<String>) -> Result<()> {
     let mut cipher_table = Vec::new();
 
     for c in ciphers {
         let totp = get_totp(session, c).unwrap_or_default();
 
         let name: String = session.decrypt(&c.name)?.try_into()?;
+
+        if let Some(filter) = &filter
+            && !name.contains(filter)
+        {
+            continue;
+        }
 
         let table_entry = CipherTable {
             id: &c.id,
@@ -56,7 +69,7 @@ fn display_ciphers(session: &BwSession, ciphers: &[BwCipher]) -> Result<()> {
     Ok(())
 }
 
-pub async fn command_ciphers() -> Result<()> {
+pub async fn command_ciphers(args: CiphersArgs) -> Result<()> {
     let mut agent = match login_from_cache().await {
         Ok(v) => v,
         Err(e) => {
@@ -71,7 +84,7 @@ pub async fn command_ciphers() -> Result<()> {
 
     let ciphers = api.ciphers(&session.auth).await?;
 
-    display_ciphers(&session, &ciphers)
+    display_ciphers(&session, &ciphers, args.filter)
 }
 
 pub async fn command_cipher<I>(id: I) -> Result<()>
@@ -90,5 +103,5 @@ where
 
     let cipher = api.cipher(&session.auth, id.as_ref()).await?;
 
-    display_ciphers(&session, &[cipher])
+    display_ciphers(&session, &[cipher], None)
 }
