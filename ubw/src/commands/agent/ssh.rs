@@ -180,7 +180,7 @@ impl Session for BwSshAgent {
                 &ssh_key.key_fingerprint
             };
 
-            let comment = match crypt.decrypt(&name) {
+            let comment = match crypt.decrypt(name) {
                 Ok(decrypted) => match String::try_from(decrypted) {
                     Ok(s) => s,
                     Err(e) => {

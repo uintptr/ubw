@@ -32,7 +32,7 @@ impl CredStorageTrait for MemoryStorage {
         K: AsRef<str>,
     {
         let secret_value = self.memory.get(key.as_ref())?;
-        Some(secret_value.expose_secret().to_string())
+        Some(secret_value.expose_secret().clone())
     }
 
     fn remove<K>(&mut self, key: K)

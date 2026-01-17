@@ -228,7 +228,7 @@ impl BwApi {
         if let BwCipherData::Login(login) = cipher.data
             && let Some(encrypted_totp) = &login.totp
         {
-            Ok(encrypted_totp.to_string())
+            Ok(encrypted_totp.clone())
         } else {
             Err(Error::TotpNotFound)
         }

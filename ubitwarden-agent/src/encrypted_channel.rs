@@ -116,8 +116,7 @@ where
     S: AsyncWrite + Unpin,
 {
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-        let cipher =
-            aead::seal(self.session_keys.transport(), buf).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let cipher = aead::seal(self.session_keys.transport(), buf).map_err(|e| io::Error::other(e))?;
 
         let len: u32 = cipher.len().try_into().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
@@ -127,7 +126,7 @@ where
 
         match Pin::new(&mut self.stream).poll_write(cx, &framed) {
             Poll::Ready(Ok(n)) if n == framed.len() => Poll::Ready(Ok(buf.len())),
-            Poll::Ready(Ok(_)) => Poll::Ready(Err(io::Error::new(io::ErrorKind::WriteZero, "partial write"))),
+            Poll::Ready(Ok(_)) => Poll::Ready(Err(io::Error::other("partial write"))),
             Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
             Poll::Pending => Poll::Pending,
         }
@@ -169,7 +168,7 @@ where
                     let cipher = &self.read_buf[..expected_len as usize];
 
                     let plaintext = aead::open(self.session_keys.receiving(), cipher)
-                        .map_err(|_| io::Error::new(io::ErrorKind::Other, "decryption failed"))?;
+                        .map_err(|_| io::Error::other("decryption failed"))?;
 
                     self.read_buf.drain(..expected_len as usize);
                     self.expected_len = None;
