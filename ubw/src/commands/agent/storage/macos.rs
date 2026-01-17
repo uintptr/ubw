@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Result, bail};
-use log::{error, info};
+use log::error;
 use security_framework::key::{GenerateKeyOptions, KeyType, SecKey};
 
 use crate::commands::agent::storage::CredStorageTrait;
