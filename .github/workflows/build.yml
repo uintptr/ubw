@@ -34,23 +34,27 @@ jobs:
               run: cargo fmt --all -- --check
 
             - name: Run clippy
-              run: cargo clippy --all-targets --all-features -- -D warnings
+              run: cargo clippy --no-deps --all-targets --all-features -- -D warnings
 
-            - name: Rename binary for release
+            - name: Rename binaries for release
               if: startsWith(github.ref, 'refs/tags/')
               run: |
                   if [ "$RUNNER_OS" == "Linux" ]; then
-                      mv target/release/ubw target/release/ubw-linux-amd64
+                      cp target/release/ubw target/release/ubw-linux-amd64
+                      cp target/release/ubwmoz target/release/ubwmoz-linux-amd64
                   elif [ "$RUNNER_OS" == "macOS" ]; then
-                      mv target/release/ubw target/release/ubw-darwin-amd64
+                      cp target/release/ubw target/release/ubw-darwin-amd64
+                      cp target/release/ubwmoz target/release/ubwmoz-darwin-amd64
                   fi
 
-            - name: Upload release binary
+            - name: Upload release binaries
               if: startsWith(github.ref, 'refs/tags/')
               uses: actions/upload-artifact@v4
               with:
-                  name: ubw-${{ matrix.os }}
-                  path: target/release/ubw-*
+                  name: binaries-${{ matrix.os }}
+                  path: |
+                      target/release/ubw-*
+                      target/release/ubwmoz-*
 
     release:
         needs: build

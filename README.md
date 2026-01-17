@@ -30,16 +30,21 @@ ubw-moz install
 - /api/accounts/profile
 - /api/sync
 
-# Install ubw
+# Install
+
+## Quick install (Linux/macOS)
+
+```
+curl -fsSL https://raw.githubusercontent.com/uintptr/ubw/main/scripts/install.sh | bash
+```
+
+This installs both `ubw` and `ubwmoz` to `~/.local/bin`.
+
+## From source
 
 ```
 cargo install --git https://github.com/uintptr/ubw ubw
-```
-
-# Install ubw-moz biometric handler for mozilla / firefox
-
-```
-cargo install --git https://github.com/uintptr/ubw ubw-moz
+cargo install --git https://github.com/uintptr/ubw ubwmoz
 ```
 
 # Install the bitwarden manifest file
