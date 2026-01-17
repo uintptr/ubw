@@ -241,8 +241,13 @@ mod tests {
         assert!(client.is_ok());
         assert!(server.is_ok());
 
-        let client = client.unwrap();
-        let server = server.unwrap();
+        let Ok(client) = client else {
+            return;
+        };
+
+        let Ok(server) = server else {
+            return;
+        };
 
         assert_eq!(client.session_keys.receiving(), server.session_keys.transport());
         assert_eq!(client.session_keys.transport(), server.session_keys.receiving());
