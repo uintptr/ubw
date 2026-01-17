@@ -17,7 +17,6 @@ ed25519-dalek.workspace = true
 figlet-rs.workspace = true
 libc.workspace = true
 log.workspace = true
-nix.workspace = true
 reqwest.workspace = true
 rstaples.workspace = true
 rust-embed.workspace = true
@@ -30,6 +29,9 @@ tabled.workspace = true
 tokio.workspace = true
 ubitwarden = { path = "../ubitwarden-api" }
 ubitwarden-agent = { path = "../ubitwarden-agent" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix.workspace = true
 x11rb.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]

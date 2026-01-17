@@ -25,7 +25,6 @@ libc = "0.2"
 localauthentication-rs = "0.1"
 log = "0.4"
 nix = { version = "0.30", features = ["user"] }
-num_enum = "0.7"
 orion = "0.17.12"
 pidlock = "0.2"
 rand = "0.8"
@@ -36,7 +35,7 @@ reqwest = { version = "0.13", default-features = false, features = [
 ] }
 rsa = "0.9"
 rstaples = "0.4"
-rust-embed = "8.10"
+rust-embed = "8.11"
 secrecy = "0.10"
 security-framework = "3.5"
 serde = { version = "1.0", features = ["derive"] }
