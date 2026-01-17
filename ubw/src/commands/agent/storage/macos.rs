@@ -37,8 +37,6 @@ impl CredStorageTrait for EnclaveStorage {
         K: Into<String>,
         V: AsRef<str>,
     {
-        info!("storing: {}", value.as_ref());
-
         if let Some(public_key) = self.key.public_key() {
             let data = value.as_ref().as_bytes();
 
