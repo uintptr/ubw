@@ -14,7 +14,7 @@ jobs:
             matrix:
                 include:
                     - os: ubuntu-latest
-                      target: x86_64-unknown-linux-gnu
+                      target: x86_64-unknown-linux-musl
                       artifact_suffix: linux-amd64
                     - os: macos-latest
                       target: x86_64-apple-darwin
@@ -30,9 +30,9 @@ jobs:
             - name: Install Rust target
               run: rustup target add ${{ matrix.target }}
 
-            - name: Install Linux dependencies
-              if: runner.os == 'Linux'
-              run: sudo apt-get update && sudo apt-get install -y libx11-xcb-dev
+            - name: Install Linux musl tools
+              if: matrix.target == 'x86_64-unknown-linux-musl'
+              run: sudo apt-get update && sudo apt-get install -y musl-tools
 
             - name: Install Linux ARM64 cross-compilation tools
               if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -44,7 +44,7 @@ jobs:
               run: cargo build --release --target ${{ matrix.target }}
 
             - name: Run tests
-              if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'x86_64-apple-darwin' || matrix.target == 'aarch64-apple-darwin'
+              if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'x86_64-apple-darwin' || matrix.target == 'aarch64-apple-darwin'
               run: cargo test --release --target ${{ matrix.target }}
 
             - name: Check formatting
