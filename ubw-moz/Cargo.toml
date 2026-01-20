@@ -26,6 +26,7 @@ sha2.workspace = true
 tokio.workspace = true
 ubitwarden = { path = "../ubitwarden-api" }
 ubitwarden-agent = { path = "../ubitwarden-agent" }
+which.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 localauthentication-rs.workspace = true

@@ -3,7 +3,7 @@ resolver = "2"
 members = ["ubitwarden-agent", "ubitwarden-api", "ubw", "ubw-moz"]
 
 [workspace.package]
-version = "0.2.8"
+version = "0.2.9"
 edition = "2024"
 
 [workspace.dependencies]
@@ -49,6 +49,7 @@ tabled = "0.20"
 thiserror = "2.0"
 tokio = { version = "1.49", features = ["full"] }
 totp-rs = { version = "5.7", features = ["otpauth"] }
+which = "8.0"
 whoami = "2"
 x11rb = { version = "0.13", features = ["allow-unsafe-code", "randr"] }
 zeroize = "1.8"

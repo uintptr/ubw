@@ -4,6 +4,6 @@ mod macos;
 pub use macos::biometric_login;
 
 #[cfg(not(target_os = "macos"))]
-mod noop;
+mod totem;
 #[cfg(not(target_os = "macos"))]
-pub use noop::biometric_login;
+pub use totem::biometric_login;
