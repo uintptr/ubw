@@ -11,15 +11,11 @@ fn cargo_bin() -> Result<PathBuf> {
 }
 
 fn find_totem() -> Result<PathBuf> {
-    let totem = match which("totem") {
-        Ok(v) => v,
-        Err(_) => {
-            let cargo_bin = cargo_bin()?;
-
-            let totem = cargo_bin.join("totem");
-
-            totem
-        }
+    let totem = if let Ok(v) = which("totem") {
+        v
+    } else {
+        let cargo_bin = cargo_bin()?;
+        cargo_bin.join("totem")
     };
 
     Ok(totem)
