@@ -16,7 +16,7 @@ This installs both `ubw` and `ubwmoz` to `~/.local/bin`.
 
 ```sh
 cargo install --git https://github.com/uintptr/ubw ubw
-cargo install --git https://github.com/uintptr/ubw ubwmoz
+cargo install --git https://github.com/uintptr/ubw ubw-moz
 ```
 
 ## Features
