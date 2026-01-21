@@ -36,11 +36,11 @@ pub async fn biometric_login() -> Result<()> {
 
     info!("executing {}", totem.display());
 
-    let out = match Command::new(totem).stdout(Stdio::piped()).output().await {
+    let out = match Command::new(&totem).stdout(Stdio::piped()).output().await {
         Ok(v) => v,
         Err(e) => {
             error!("{} failed with {e}", totem.display());
-            return Err(e);
+            return Err(e.into());
         }
     };
 
