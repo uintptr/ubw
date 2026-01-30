@@ -156,11 +156,11 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
 
     let window_id = if window_id_str.starts_with("0x") || window_id_str.starts_with("0X") {
         u32::from_str_radix(&window_id_str[2..], 16)
-            .with_context(|| format!("Invalid hex window ID: {}", window_id_str))?
+            .with_context(|| format!("Invalid hex window ID: {window_id_str}"))?
     } else {
         window_id_str
             .parse()
-            .with_context(|| format!("Invalid window ID: {}", window_id_str))?
+            .with_context(|| format!("Invalid window ID: {window_id_str}"))?
     };
 
     info!("Parsed window_id={window_id}");
