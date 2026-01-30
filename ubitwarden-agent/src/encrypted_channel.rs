@@ -176,8 +176,9 @@ where
                     continue;
                 };
 
-                let plaintext = aead::open(self.session_keys.receiving(), cipher)
-                    .map_err(|_| io::Error::other("decryption failed"))?;
+                let plaintext = aead::open(self.session_keys.receiving(), cipher).map_err(|_| {
+                    io::Error::other("failed to decrypt message - possible data corruption or key mismatch")
+                })?;
 
                 self.read_buf.drain(..cipher_len);
                 self.expected_len = None;

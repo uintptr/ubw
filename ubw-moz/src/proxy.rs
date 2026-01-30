@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use aes::Aes256;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine, prelude::BASE64_STANDARD};
 use cbc::{
     Decryptor,
@@ -212,7 +212,9 @@ impl UBwProxy {
             // Write message length prefix (required by native messaging protocol)
             let msg_len: u32 = msg.len().try_into()?;
             w.write_u32_le(msg_len).await?;
-            w.write_all(msg.as_bytes()).await?;
+            w.write_all(msg.as_bytes())
+                .await
+                .context("failed to write encrypted response to stdout")?;
             w.flush().await?;
             Ok(())
         } else {
@@ -265,7 +267,9 @@ impl UBwProxy {
         //
         let msg_len: u32 = message.len().try_into()?;
         w.write_u32_le(msg_len).await?;
-        w.write_all(message.as_bytes()).await?;
+        w.write_all(message.as_bytes())
+            .await
+            .context("failed to write encryption setup response to stdout")?;
         w.flush().await?;
 
         self.session_key = Some(key);
@@ -353,16 +357,16 @@ async fn read_buffer(rdr: &mut BufReader<Stdin>) -> Result<Vec<u8>> {
     let len: usize = rdr.read_u32_le().await?.try_into()?;
 
     if 0 == len {
-        error!("EOF");
-        return Err(anyhow!("EOF"));
+        return Err(anyhow!(
+            "received zero-length message from native messaging interface (unexpected EOF)"
+        ));
     }
 
     let mut data = vec![0u8; len];
 
-    if let Err(e) = rdr.read_exact(&mut data).await {
-        error!("Unable to read {len} bytes ({e})");
-        return Err(e.into());
-    }
+    rdr.read_exact(&mut data)
+        .await
+        .with_context(|| format!("failed to read {len} bytes from native messaging input"))?;
 
     Ok(data)
 }

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use figlet_rs::FIGfont;
 use rust_embed::{Embed, EmbeddedFile};
 
@@ -28,9 +28,13 @@ where
     let fig = match font_data {
         Some(v) => {
             let font_str = String::from_utf8_lossy(&v.data);
-            FIGfont::from_content(&font_str).map_err(|e| anyhow::anyhow!(e))?
+            FIGfont::from_content(&font_str)
+                .map_err(|e| anyhow::anyhow!(e))
+                .with_context(|| format!("failed to load embedded FIGfont '{}'", font.as_ref()))?
         }
-        None => FIGfont::standard().map_err(|e| anyhow::anyhow!(e))?,
+        None => FIGfont::standard()
+            .map_err(|e| anyhow::anyhow!(e))
+            .context("failed to load standard FIGfont")?,
     };
 
     let content = fig.convert(text.as_ref());

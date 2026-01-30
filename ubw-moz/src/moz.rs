@@ -1,6 +1,6 @@
 use std::{env, fs, io::Write, path::PathBuf};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use log::info;
 use serde::Serialize;
 
@@ -56,7 +56,8 @@ pub fn moz_install() -> Result<()> {
     // we're installing so we'll have to make sure it exists
     //
     if !dir.exists() {
-        fs::create_dir_all(&dir)?;
+        fs::create_dir_all(&dir)
+            .with_context(|| format!("failed to create native messaging hosts directory at {}", dir.display()))?;
     }
 
     let self_exe = env::current_exe()?;
@@ -77,9 +78,11 @@ pub fn moz_install() -> Result<()> {
         .truncate(true)
         .write(true)
         .create(true)
-        .open(config_file)?;
+        .open(&config_file)
+        .with_context(|| format!("failed to create config file at {}", config_file.display()))?;
 
-    f.write_all(config_data.as_bytes())?;
+    f.write_all(config_data.as_bytes())
+        .with_context(|| format!("failed to write config to {}", config_file.display()))?;
 
     Ok(())
 }
@@ -100,7 +103,8 @@ pub fn moz_uninstall() -> Result<()> {
         return Ok(());
     }
 
-    fs::remove_file(config_file)?;
+    fs::remove_file(&config_file)
+        .with_context(|| format!("failed to remove config file at {}", config_file.display()))?;
 
     Ok(())
 }
