@@ -1,6 +1,6 @@
 use std::{env, time::Duration};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::Args;
 use log::{error, info, warn};
 use tokio::{
@@ -53,7 +53,7 @@ async fn signal_handlers() -> Result<()> {
 }
 
 async fn cache_server() -> Result<()> {
-    let creds_server = CacheServer::new()?;
+    let creds_server = CacheServer::new().context("Failed to initialize credentials cache server")?;
     let ssh_server = SshAgentServer::new();
 
     let (quit_tx, quit_rx) = watch::channel(false);
@@ -105,11 +105,15 @@ async fn cache_server() -> Result<()> {
 ////////////////////////////////////////////////////////////////////////////////
 
 pub async fn spawn_server() -> Result<UBWAgent> {
-    let self_exe = env::current_exe()?;
+    let self_exe = env::current_exe().context("Failed to determine path to current executable")?;
 
     info!("spawning {}", self_exe.display());
 
-    Command::new(self_exe).arg("-v").arg("agent").spawn()?;
+    Command::new(&self_exe)
+        .arg("-v")
+        .arg("agent")
+        .spawn()
+        .with_context(|| format!("Failed to spawn server process at {}", self_exe.display()))?;
 
     //
     // wait until we can ping it
@@ -122,7 +126,7 @@ pub async fn spawn_server() -> Result<UBWAgent> {
         sleep(Duration::from_secs(1)).await;
     }
 
-    bail!("Unable to spawn credential server")
+    bail!("Failed to connect to credential server after {SPAWN_WAIT_TIMEOUT} attempts")
 }
 
 pub async fn command_agent(args: AgentArgs) -> Result<()> {

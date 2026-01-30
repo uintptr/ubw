@@ -3,7 +3,7 @@ use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, RwLock};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use signature::Signer;
 use ssh_agent_lib::ssh_key::public::KeyData;
 use ssh_agent_lib::{
@@ -39,7 +39,7 @@ impl BwSshAgent {
     }
 
     fn find_key_cache(&self, public_key: &str) -> Result<PrivateKey> {
-        let keys = self.cache.read().map_err(|e| anyhow!("Cache lock poisoned: {e}"))?;
+        let keys = self.cache.read().map_err(|_| anyhow!("SSH key cache lock was poisoned"))?;
         if let Some(key) = keys.get(public_key) {
             return Ok(key.clone());
         }
@@ -51,7 +51,7 @@ impl BwSshAgent {
         //
         // Get keys from the server and find it
         //
-        let (crypt, ssh_keys) = get_remote_keys().await?;
+        let (crypt, ssh_keys) = get_remote_keys().await.context("Failed to fetch SSH keys from remote server")?;
 
         for ssh_key in ssh_keys {
             let cur_pub_b64 = match crypt.decrypt(&ssh_key.public_key) {
@@ -106,7 +106,10 @@ impl BwSshAgent {
 
     fn add_key(&self, public_key: &str, private_key: &PrivateKey) -> Result<()> {
         info!("adding {public_key} to cache");
-        let mut keys = self.cache.write().map_err(|e| anyhow!("Cache lock poisoned: {e}"))?;
+        let mut keys = self
+            .cache
+            .write()
+            .map_err(|_| anyhow!("SSH key cache lock was poisoned during write"))?;
         keys.insert(public_key.to_string(), private_key.clone());
         Ok(())
     }
@@ -115,7 +118,9 @@ impl BwSshAgent {
     // PUBLIC
     ////////////////////////////////////////////////////////////////////////////
     pub async fn find_key(&self, public_key: &PublicKey) -> Result<PrivateKey> {
-        let pub_key_openssh = public_key.to_openssh()?;
+        let pub_key_openssh = public_key
+            .to_openssh()
+            .context("Failed to convert public key to OpenSSH format")?;
 
         //
         // is it cached ?
@@ -131,25 +136,36 @@ impl BwSshAgent {
             //
             // add it to the cache for the next time around
             //
-            self.add_key(&pub_key_openssh, &key)?;
+            self.add_key(&pub_key_openssh, &key)
+                .context("Failed to cache SSH key after remote retrieval")?;
             return Ok(key);
         }
 
-        bail!("Key Not found");
+        bail!("SSH key '{pub_key_openssh}' not found in cache or remote server");
     }
 }
 
 async fn get_remote_keys() -> Result<(BwSession, Vec<BwSshKey>)> {
-    let mut agent = UBWAgent::client().await?;
+    let mut agent = UBWAgent::client()
+        .await
+        .context("Failed to connect to local credential cache")?;
 
     // Load session and fetch ciphers from Bitwarden
-    let session = agent.session_load().await?;
+    let session = agent
+        .session_load()
+        .await
+        .context("Failed to load Bitwarden session from cache")?;
 
     // Create API client and fetch all ciphers
-    let api = BwApi::new(&session.email, &session.server_url)?;
+    let api = BwApi::new(&session.email, &session.server_url)
+        .with_context(|| format!("Failed to initialize API client for {}", session.email))?;
 
     let mut ssh_keys = vec![];
-    for cipher in api.ssh_keys(&session.auth).await? {
+    for cipher in api
+        .ssh_keys(&session.auth)
+        .await
+        .context("Failed to fetch SSH keys from Bitwarden server")?
+    {
         if let BwCipherData::Ssh(ssh) = cipher.data {
             ssh_keys.push(ssh);
         }
@@ -325,12 +341,14 @@ impl SshAgentServer {
     }
 
     pub async fn accept_loop(&self, mut quit_rx: Receiver<bool>) -> Result<()> {
-        let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("unable to find data-dir"))?;
+        let data_dir = dirs::data_dir().context("Failed to determine data directory for SSH agent socket")?;
         let data_dir = data_dir.join(UBW_DATA_DIR);
 
         // create data dir if it doesn't exist
         if !data_dir.exists() {
-            fs::create_dir_all(&data_dir).await?;
+            fs::create_dir_all(&data_dir)
+                .await
+                .with_context(|| format!("Failed to create data directory at {}", data_dir.display()))?;
         }
 
         let socket_name = format!("{SOCK_PREFIX}.sock");
@@ -338,13 +356,24 @@ impl SshAgentServer {
 
         if socket_path.exists() {
             warn!("deleting {}", socket_path.display());
-            fs::remove_file(&socket_path).await?;
+            fs::remove_file(&socket_path).await.with_context(|| {
+                format!(
+                    "Failed to remove existing SSH agent socket at {}",
+                    socket_path.display()
+                )
+            })?;
         }
 
-        let fd = UnixListener::bind(&socket_path)?;
+        let fd = UnixListener::bind(&socket_path)
+            .with_context(|| format!("Failed to bind SSH agent socket at {}", socket_path.display()))?;
 
         let perms = Permissions::from_mode(0o600);
-        fs::set_permissions(&socket_path, perms).await?;
+        fs::set_permissions(&socket_path, perms).await.with_context(|| {
+            format!(
+                "Failed to set permissions on SSH agent socket at {}",
+                socket_path.display()
+            )
+        })?;
 
         let agent = BwSshAgent::new(Arc::clone(&self.cache));
 

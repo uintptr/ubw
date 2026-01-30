@@ -2,7 +2,7 @@ use std::env;
 use ubitwarden::api::BwApi;
 use ubitwarden_agent::agent::UBWAgent;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::{error, info};
 use tokio::io::{self, AsyncReadExt};
 use x11rb::connection::Connection;
@@ -32,19 +32,28 @@ fn draw_prompt_text(conn: &RustConnection, drawable: u32, gc: u32, monitors: &[M
 
     let text_bytes = text.as_bytes();
 
-    for monitor in monitors {
-        let center_x = monitor.x.saturating_add(i16::try_from(monitor.width / 2)?);
-        let center_y = monitor.y.saturating_add(i16::try_from(monitor.height / 2)?);
+    for (mon_idx, monitor) in monitors.iter().enumerate() {
+        let center_x = monitor.x.saturating_add(
+            i16::try_from(monitor.width / 2)
+                .with_context(|| format!("Monitor {} width {} overflows i16", mon_idx, monitor.width))?,
+        );
+        let center_y = monitor.y.saturating_add(
+            i16::try_from(monitor.height / 2)
+                .with_context(|| format!("Monitor {} height {} overflows i16", mon_idx, monitor.height))?,
+        );
 
         // Estimate text width (rough approximation: 20 pixels per character for large font)
-        let text_width = i16::try_from(text_bytes.len())?.saturating_mul(20);
+        let text_width = i16::try_from(text_bytes.len())
+            .context("Text length overflows i16")?
+            .saturating_mul(20);
         let text_x = center_x.saturating_sub(text_width / 2);
         let text_y = center_y.saturating_sub(TEXT_OFFSET);
 
-        conn.image_text8(drawable, gc, text_x, text_y, text_bytes)?;
+        conn.image_text8(drawable, gc, text_x, text_y, text_bytes)
+            .context("Failed to draw prompt text on X11 display")?;
     }
 
-    conn.flush()?;
+    conn.flush().context("Failed to flush X11 display operations")?;
     Ok(())
 }
 
@@ -55,12 +64,18 @@ fn draw_password_dots(
     monitors: &[Monitor],
     num_chars: usize,
 ) -> Result<()> {
-    let num_dots = i16::try_from(num_chars)?;
+    let num_dots = i16::try_from(num_chars).context("Number of password characters overflows i16")?;
     let total_width = num_dots.saturating_mul(DOT_SPACING);
 
     for (mon_idx, monitor) in monitors.iter().enumerate() {
-        let center_x = monitor.x.saturating_add(i16::try_from(monitor.width / 2)?);
-        let center_y = monitor.y.saturating_add(i16::try_from(monitor.height / 2)?);
+        let center_x = monitor.x.saturating_add(
+            i16::try_from(monitor.width / 2)
+                .with_context(|| format!("Monitor {} width {} overflows i16", mon_idx, monitor.width))?,
+        );
+        let center_y = monitor.y.saturating_add(
+            i16::try_from(monitor.height / 2)
+                .with_context(|| format!("Monitor {} height {} overflows i16", mon_idx, monitor.height))?,
+        );
         let start_x = center_x.saturating_sub(total_width / 2);
 
         info!("Monitor {mon_idx}: drawing at center ({center_x}, {center_y})");
@@ -75,17 +90,18 @@ fn draw_password_dots(
             rects.push(Rectangle {
                 x: x.saturating_sub(DOT_RADIUS),
                 y: y.saturating_sub(DOT_RADIUS),
-                width: u16::try_from(DOT_RADIUS.saturating_mul(2))?,
-                height: u16::try_from(DOT_RADIUS.saturating_mul(2))?,
+                width: u16::try_from(DOT_RADIUS.saturating_mul(2)).context("Dot radius overflows u16")?,
+                height: u16::try_from(DOT_RADIUS.saturating_mul(2)).context("Dot radius overflows u16")?,
             });
         }
 
         if !rects.is_empty() {
-            conn.poly_fill_rectangle(drawable, gc, &rects)?;
+            conn.poly_fill_rectangle(drawable, gc, &rects)
+                .context("Failed to draw password dots on X11 display")?;
         }
     }
 
-    conn.flush()?;
+    conn.flush().context("Failed to flush X11 display operations")?;
     info!("Flushed to display");
 
     Ok(())
@@ -134,20 +150,23 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
 
     let mut reader = io::stdin();
 
-    let window_id_str = env::var("XSCREENSAVER_WINDOW")?;
+    let window_id_str = env::var("XSCREENSAVER_WINDOW").context("XSCREENSAVER_WINDOW environment variable not set")?;
 
     info!("XSCREENSAVER_WINDOW={window_id_str}");
 
     let window_id = if window_id_str.starts_with("0x") || window_id_str.starts_with("0X") {
-        u32::from_str_radix(&window_id_str[2..], 16)?
+        u32::from_str_radix(&window_id_str[2..], 16)
+            .with_context(|| format!("Invalid hex window ID: {}", window_id_str))?
     } else {
-        window_id_str.parse()?
+        window_id_str
+            .parse()
+            .with_context(|| format!("Invalid window ID: {}", window_id_str))?
     };
 
     info!("Parsed window_id={window_id}");
 
     // Connect to X11
-    let (conn, screen_num) = RustConnection::connect(None)?;
+    let (conn, screen_num) = RustConnection::connect(None).context("Failed to connect to X11 display")?;
     let screen = conn
         .setup()
         .roots
@@ -159,7 +178,11 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
     info!("Using drawable={drawable} (0x{drawable:x})");
 
     // Get window geometry
-    let geometry = conn.get_geometry(drawable)?.reply()?;
+    let geometry = conn
+        .get_geometry(drawable)
+        .context("Failed to request window geometry")?
+        .reply()
+        .context("Failed to get window geometry reply")?;
 
     info!(
         "Window geometry: {}x{} at ({}, {})",
@@ -167,8 +190,9 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
     );
 
     // Clear the window at the start to remove any previous dots
-    conn.clear_area(false, drawable, 0, 0, geometry.width, geometry.height)?;
-    conn.flush()?;
+    conn.clear_area(false, drawable, 0, 0, geometry.width, geometry.height)
+        .context("Failed to clear window area")?;
+    conn.flush().context("Failed to flush X11 display")?;
 
     // Detect monitors using RandR
     let monitors = detect_monitors(&conn, screen.root)?;
@@ -178,7 +202,7 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
     }
 
     // Try to load a larger font - try common font names
-    let font = conn.generate_id()?;
+    let font = conn.generate_id().context("Failed to generate X11 font ID")?;
     let font_names = [
         b"-*-*-bold-r-*-*-34-*-*-*-*-*-*-*" as &[u8],
         b"-*-*-*-*-*-*-34-*-*-*-*-*-*-*",
@@ -198,7 +222,7 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
     }
 
     // Create graphics context with green color for visibility
-    let gc = conn.generate_id()?;
+    let gc = conn.generate_id().context("Failed to generate X11 graphics context ID")?;
     let mut gc_aux = CreateGCAux::new()
         .foreground(0x0000_FF00) // Green color
         .graphics_exposures(0);
@@ -207,22 +231,24 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
         gc_aux = gc_aux.font(font);
     }
 
-    conn.create_gc(gc, drawable, &gc_aux)?;
+    conn.create_gc(gc, drawable, &gc_aux)
+        .context("Failed to create X11 graphics context")?;
 
     info!("Created GC with green foreground");
 
     // Map and raise the window to ensure it's visible
-    conn.map_window(drawable)?;
+    conn.map_window(drawable).context("Failed to map X11 window")?;
 
     let config = ConfigureWindowAux::new().stack_mode(StackMode::ABOVE);
-    conn.configure_window(drawable, &config)?;
-    conn.flush()?;
+    conn.configure_window(drawable, &config)
+        .context("Failed to configure X11 window")?;
+    conn.flush().context("Failed to flush X11 display")?;
 
     // Draw the prompt text immediately
     draw_prompt_text(&conn, drawable, gc, &monitors, prompt)?;
 
     loop {
-        reader.read_exact(&mut buf).await?;
+        reader.read_exact(&mut buf).await.context("Failed to read password input")?;
 
         if buf[0] == b'\n' || buf[0] == b'\r' {
             break;
@@ -241,7 +267,8 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
         info!("Drawing {} dots on {} monitors", chars.len(), monitors.len());
 
         // Clear the entire drawable first to remove old dots
-        conn.clear_area(false, drawable, 0, 0, geometry.width, geometry.height)?;
+        conn.clear_area(false, drawable, 0, 0, geometry.width, geometry.height)
+            .context("Failed to clear window area")?;
 
         // Draw the prompt text
         draw_prompt_text(&conn, drawable, gc, &monitors, prompt)?;
@@ -251,8 +278,9 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
     }
 
     // Clear the window when done
-    conn.clear_area(false, drawable, 0, 0, geometry.width, geometry.height)?;
-    conn.flush()?;
+    conn.clear_area(false, drawable, 0, 0, geometry.width, geometry.height)
+        .context("Failed to clear window area")?;
+    conn.flush().context("Failed to flush X11 display")?;
 
     Ok(chars)
 }
@@ -262,11 +290,16 @@ async fn store_password(args: &XSecureLockArgs, password: &str) -> Result<()> {
         v
     } else {
         info!("unable to talk to the server. spawning a new one");
-        spawn_server().await?;
-        UBWAgent::client().await?
+        spawn_server().await.context("Failed to spawn credential cache server")?;
+        UBWAgent::client()
+            .await
+            .context("Failed to connect to credential cache server after spawning")?
     };
 
-    agent.credentials_store(&args.email, &args.server_url, password).await?;
+    agent
+        .credentials_store(&args.email, &args.server_url, password)
+        .await
+        .context("Failed to store credentials in cache")?;
 
     Ok(())
 }
@@ -276,17 +309,18 @@ pub async fn command_xsecurelock(args: XSecureLockArgs) -> Result<()> {
 
     let password_chars = read_password(&prompt).await?;
 
-    let password = String::from_utf8(password_chars)?;
+    let password = String::from_utf8(password_chars).context("Password contains invalid UTF-8 characters")?;
 
     //
     // validate the password
     //
 
-    let api = BwApi::new(&args.email, &args.server_url)?;
+    let api = BwApi::new(&args.email, &args.server_url)
+        .with_context(|| format!("Failed to initialize API client for {}", args.email))?;
 
     if let Err(e) = api.auth(&password).await {
         error!("auth failure");
-        return Err(e.into());
+        return Err(e).context("Authentication failed");
     }
 
     if let Err(e) = store_password(&args, &password).await {

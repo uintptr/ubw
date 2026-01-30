@@ -1,6 +1,6 @@
 use std::{fs, sync::Arc};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::Args;
 use log::{error, info, warn};
 use secrecy::zeroize::Zeroize;
@@ -39,7 +39,8 @@ fn get_peer_pid(client: &UnixStream) -> Result<u32> {
     use std::os::fd::AsRawFd;
 
     let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
-    let mut len = libc::socklen_t::try_from(std::mem::size_of::<libc::ucred>())?;
+    let mut len = libc::socklen_t::try_from(std::mem::size_of::<libc::ucred>())
+        .context("Failed to compute socket credential structure size")?;
 
     let ret = unsafe {
         libc::getsockopt(
@@ -54,7 +55,7 @@ fn get_peer_pid(client: &UnixStream) -> Result<u32> {
     if ret == 0 {
         Ok(cred.uid)
     } else {
-        Err(Error::ClientPidNotFound.into())
+        Err(Error::ClientPidNotFound).context("getsockopt(SO_PEERCRED) failed - unable to get client credentials")
     }
 }
 
@@ -148,19 +149,21 @@ impl ClientHandler {
     async fn client_handler(&self, client: UnixStream) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
-            let verified = verify_client(&client)?;
+            let verified = verify_client(&client).context("Client verification failed for incoming connection")?;
             if !verified {
                 error!("Verification failed");
                 return Err(Error::ClientVerificationFailure.into());
             }
         }
 
-        let mut client = UBWAgent::server(client).await?;
+        let mut client = UBWAgent::server(client)
+            .await
+            .context("Failed to initialize server protocol handler for client")?;
 
         loop {
             info!("wating for a request");
 
-            let req = client.get_request().await?;
+            let req = client.get_request().await.context("Failed to receive request from client")?;
 
             info!("Request: {req}");
 
@@ -192,15 +195,19 @@ impl CacheServer {
     pub fn new() -> Result<Self> {
         info!("binding unix socket");
 
-        let socket_path = create_socket_name()?;
+        let socket_path = create_socket_name().context("Failed to determine socket path")?;
 
         if socket_path.exists() {
-            fs::remove_file(&socket_path)?;
+            fs::remove_file(&socket_path)
+                .with_context(|| format!("Failed to remove existing socket at {}", socket_path.display()))?;
         }
 
-        let listener = UnixListener::bind(socket_path)?;
+        let listener = UnixListener::bind(&socket_path)
+            .with_context(|| format!("Failed to bind Unix socket at {}", socket_path.display()))?;
 
-        let storage_lock = Arc::new(RwLock::new(CredStorage::new()?));
+        let storage_lock = Arc::new(RwLock::new(
+            CredStorage::new().context("Failed to initialize credential storage")?,
+        ));
 
         Ok(Self { listener, storage_lock })
     }

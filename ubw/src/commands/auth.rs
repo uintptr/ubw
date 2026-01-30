@@ -2,7 +2,7 @@ use std::{env, fs, io::Write, os::unix::fs::OpenOptionsExt};
 
 use clap::Args;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use dialoguer::Password;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
@@ -53,7 +53,7 @@ impl LoginConfigData {
     }
 
     pub fn from_file() -> Result<Self> {
-        let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("config dir not found"))?;
+        let config_dir = dirs::config_dir().context("Unable to locate config directory")?;
 
         let config_file = config_dir.join(UBW_CONFIG_DIR).join(LOGIN_FILE_NAME);
 
@@ -63,34 +63,43 @@ impl LoginConfigData {
 
         info!("reading: {}", config_file.display());
 
-        let config_data = fs::read_to_string(config_file)?;
+        let config_data = fs::read_to_string(&config_file)
+            .with_context(|| format!("Failed to read login config from {}", config_file.display()))?;
 
-        let config: Self = serde_json::from_str(&config_data)?;
+        let config: Self = serde_json::from_str(&config_data).context("Invalid JSON format in login config file")?;
 
         Ok(config)
     }
 
     pub fn sync(&self) -> Result<()> {
-        let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("config dir not found"))?;
+        let config_dir = dirs::config_dir().context("Cannot sync login config: config directory not found")?;
 
         let config_dir = config_dir.join(UBW_CONFIG_DIR);
 
         if !config_dir.exists() {
-            fs::create_dir_all(&config_dir)?;
+            fs::create_dir_all(&config_dir)
+                .with_context(|| format!("Failed to create config directory at {}", config_dir.display()))?;
         }
 
         let config_file = config_dir.join(LOGIN_FILE_NAME);
 
-        let data = serde_json::to_string_pretty(self)?;
+        let data = serde_json::to_string_pretty(self).context("Failed to serialize login config to JSON")?;
 
         let mut f = fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .mode(0o600)
-            .open(config_file)?;
+            .open(&config_file)
+            .with_context(|| {
+                format!(
+                    "Failed to open login config file for writing: {}",
+                    config_file.display()
+                )
+            })?;
 
-        f.write_all(data.as_bytes())?;
+        f.write_all(data.as_bytes())
+            .with_context(|| format!("Failed to write login config to {}", config_file.display()))?;
 
         Ok(())
     }
@@ -101,7 +110,8 @@ where
     E: AsRef<str>,
     U: AsRef<str>,
 {
-    let api = BwApi::new(&email, &server_url)?;
+    let api = BwApi::new(&email, &server_url)
+        .with_context(|| format!("Failed to initialize API client for {}", email.as_ref()))?;
 
     let banner_text = format!("{UBW_APP_NAME} {UBW_APP_VERSION}");
     display_banner(banner_text, UBW_DEF_FIGLET_FONT)?;
@@ -128,7 +138,13 @@ where
             Ok(_) => return Ok(password),
             Err(e) => {
                 if attempt == UBW_LOGIN_ATTEMPTS {
-                    return Err(e.into());
+                    return Err(e).with_context(|| {
+                        format!(
+                            "Authentication failed for {} after {} attempts",
+                            email.as_ref(),
+                            UBW_LOGIN_ATTEMPTS
+                        )
+                    });
                 }
             }
         }
@@ -154,11 +170,13 @@ pub async fn login_from_cache() -> Result<UBWAgent> {
         v
     } else {
         info!("unable to talk to the server. spawning a new one");
-        spawn_server().await?;
-        UBWAgent::client().await?
+        spawn_server().await.context("Failed to spawn credential cache server")?;
+        UBWAgent::client()
+            .await
+            .context("Failed to connect to credential cache server after spawning")?
     };
 
-    let cache = LoginConfigData::from_file()?;
+    let cache = LoginConfigData::from_file().context("No cached login configuration found")?;
 
     if agent.credentials_fetch().await.is_err() {
         let password = ask_password(&cache.email, &cache.server_url).await?;
@@ -174,13 +192,14 @@ pub async fn command_logins() -> Result<()> {
         bail!("Not logged in ({e})");
     }
 
-    let mut agent = UBWAgent::client().await?;
+    let mut agent = UBWAgent::client().await.context("Failed to connect to credential cache")?;
 
-    let session = agent.session_load().await?;
+    let session = agent.session_load().await.context("Failed to load session")?;
 
-    let api = BwApi::new(&session.email, &session.server_url)?;
+    let api = BwApi::new(&session.email, &session.server_url)
+        .with_context(|| format!("Failed to initialize API client for {}", session.email))?;
 
-    let ciphers = api.logins(&session.auth).await?;
+    let ciphers = api.logins(&session.auth).await.context("Failed to fetch logins from server")?;
 
     for c in ciphers {
         if let BwCipherData::Login(login) = c.data
@@ -199,8 +218,10 @@ pub async fn command_auth(args: AuthArgs) -> Result<()> {
         v
     } else {
         info!("unable to talk to the server. spawning a new one");
-        spawn_server().await?;
-        UBWAgent::client().await?
+        spawn_server().await.context("Failed to spawn credential cache server")?;
+        UBWAgent::client()
+            .await
+            .context("Failed to connect to credential cache server after spawning")?
     };
 
     if !args.force {
