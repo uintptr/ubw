@@ -24,7 +24,7 @@ hmac = "0.12"
 libc = "0.2"
 localauthentication-rs = "0.1"
 log = "0.4"
-nix = { version = "0.30", features = ["user"] }
+nix = { version = "0.31", features = ["user"] }
 orion = "0.17.12"
 pidlock = "0.2"
 rand = "0.8"
