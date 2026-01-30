@@ -2,7 +2,7 @@ use std::{fs, os::unix::fs::OpenOptionsExt};
 
 use clap::{Parser, Subcommand};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result};
 use daemonize::Daemonize;
 use log::{LevelFilter, error};
 use rstaples::logging::StaplesLogger;
@@ -73,9 +73,9 @@ async fn tokio_entry(args: UserArgs) -> Result<()> {
 }
 
 fn daemonize() -> Result<()> {
-    let home_dir = dirs::home_dir().ok_or_else(|| anyhow!("unable to find home dir"))?;
+    let home_dir = dirs::home_dir().context("Failed to determine home directory")?;
 
-    let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("unable to find data-dir"))?;
+    let data_dir = dirs::data_dir().context("Failed to determine data directory")?;
     let data_dir = data_dir.join(UBW_DATA_DIR);
 
     //
@@ -94,9 +94,19 @@ fn daemonize() -> Result<()> {
     let stdout_file = data_dir.join("agent.stdout");
     let stderr_file = data_dir.join("agent.stderr");
 
-    let stdout = fs::OpenOptions::new().append(true).create(true).mode(0o600).open(stdout_file)?;
+    let stdout = fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .mode(0o600)
+        .open(&stdout_file)
+        .with_context(|| format!("Failed to open stdout log file at {}", stdout_file.display()))?;
 
-    let stderr = fs::OpenOptions::new().append(true).create(true).mode(0o600).open(stderr_file)?;
+    let stderr = fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .mode(0o600)
+        .open(&stderr_file)
+        .with_context(|| format!("Failed to open stderr log file at {}", stderr_file.display()))?;
 
     Daemonize::new()
         .pid_file(pid_file)
@@ -105,7 +115,8 @@ fn daemonize() -> Result<()> {
         .umask(0o077)
         .stdout(stdout)
         .stderr(stderr)
-        .start()?;
+        .start()
+        .context("Failed to daemonize agent process")?;
     Ok(())
 }
 
