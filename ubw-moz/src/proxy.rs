@@ -96,11 +96,8 @@ struct UBwMozSessionKey {
 
 impl UBwMozSessionKey {
     fn new() -> Self {
-        use rand::RngCore;
-
-        let mut rng = rand::thread_rng();
         let mut key = vec![0u8; 64]; // Generate a 64-byte (512-bit) session key
-        rng.fill_bytes(&mut key);
+        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut key);
 
         Self { key }
     }
@@ -135,12 +132,9 @@ impl UBwMozSessionKey {
             Encryptor,
             cipher::{BlockEncryptMut, KeyIvInit},
         };
-        use rand::RngCore;
-
         // Generate random 16-byte IV
-        let mut rng = rand::thread_rng();
         let mut iv = vec![0u8; 16];
-        rng.fill_bytes(&mut iv);
+        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut iv);
 
         // Split session key: first 32 bytes = encryption key, last 32 bytes = MAC key
         let enc_key = self.key.get(0..32).ok_or_else(|| anyhow!("Invalid key size"))?;
@@ -337,7 +331,7 @@ impl UBwProxy {
 }
 
 fn encrypt_message(msg: &CommandMessage, plain: &[u8]) -> Result<String> {
-    let mut rng = rand::thread_rng(); // rand@0.8
+    let mut rng = rand_core::OsRng;
 
     let der_key = if let Some(public_key) = &msg.public_key {
         BASE64_STANDARD.decode(public_key.as_bytes())?
