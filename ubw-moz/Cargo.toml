@@ -24,7 +24,6 @@ serde_json.workspace = true
 sha1.workspace = true
 sha2.workspace = true
 tokio.workspace = true
-ubitwarden = { path = "../ubitwarden-api" }
 ubitwarden-agent = { path = "../ubitwarden-agent" }
 which.workspace = true
 

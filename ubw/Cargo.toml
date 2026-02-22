@@ -17,7 +17,6 @@ ed25519-dalek.workspace = true
 figlet-rs.workspace = true
 libc.workspace = true
 log.workspace = true
-reqwest.workspace = true
 rstaples.workspace = true
 rust-embed.workspace = true
 secrecy.workspace = true
