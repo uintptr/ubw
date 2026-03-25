@@ -4,6 +4,6 @@ mod macos;
 pub use macos::biometric_login;
 
 #[cfg(not(target_os = "macos"))]
-mod totem;
+mod passthru;
 #[cfg(not(target_os = "macos"))]
-pub use totem::biometric_login;
+pub use passthru::biometric_login;
