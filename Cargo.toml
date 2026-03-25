@@ -19,7 +19,7 @@ derive_more = { version = "2.1", features = ["display"] }
 dialoguer = "0.12"
 dirs = "6.0"
 ed25519-dalek = "2.2"
-figlet-rs = "0.1"
+figlet-rs = "1.0"
 hmac = "0.12"
 libc = "0.2"
 localauthentication-rs = "0.1"

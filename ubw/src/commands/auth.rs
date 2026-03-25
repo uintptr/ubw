@@ -10,14 +10,13 @@ use ubitwarden::{api::BwApi, api_types::BwCipherData};
 use ubitwarden_agent::agent::UBWAgent;
 
 use crate::{
-    banner::display_banner,
+    banner::render_banner,
     commands::agent::server::spawn_server,
     common::{UBW_APP_NAME, UBW_APP_VERSION, UBW_CONFIG_DIR},
 };
 
 const LOGIN_FILE_NAME: &str = "login.json";
 const UBW_LOGIN_ATTEMPTS: i8 = 3;
-const UBW_DEF_FIGLET_FONT: &str = "pagga";
 
 #[derive(Serialize, Deserialize)]
 struct LoginConfigData {
@@ -114,7 +113,7 @@ where
         .with_context(|| format!("Failed to initialize API client for {}", email.as_ref()))?;
 
     let banner_text = format!("{UBW_APP_NAME} {UBW_APP_VERSION}");
-    display_banner(banner_text, UBW_DEF_FIGLET_FONT)?;
+    render_banner(banner_text)?;
 
     for attempt in 1..=UBW_LOGIN_ATTEMPTS {
         //
