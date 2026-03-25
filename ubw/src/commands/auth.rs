@@ -113,7 +113,7 @@ where
         .with_context(|| format!("Failed to initialize API client for {}", email.as_ref()))?;
 
     let banner_text = format!("{UBW_APP_NAME} {UBW_APP_VERSION}");
-    render_banner(banner_text)?;
+    print!("{}", render_banner(banner_text)?);
 
     for attempt in 1..=UBW_LOGIN_ATTEMPTS {
         //
