@@ -281,14 +281,14 @@ impl UBwProxy {
         let (response, user_key_b64) = match self.get_vault_key().await {
             Ok(v) => {
                 if let Err(e) = biometric_login().await {
-                    error!("biometric failure ({e}");
+                    error!("biometric failure ({e})");
                     (false, None)
                 } else {
                     (true, Some(v))
                 }
             }
             Err(e) => {
-                error!("Unable to get vault key ({e}");
+                error!("Unable to get vault key ({e})");
                 (false, None)
             }
         };
@@ -402,7 +402,7 @@ pub async fn moz_proxy() -> Result<()> {
     let proxy = UBwProxy::new();
 
     if let Err(e) = io_loop(proxy).await {
-        error!("io_loop() returnd {e}");
+        error!("io_loop() returned {e}");
         return Err(e);
     }
 

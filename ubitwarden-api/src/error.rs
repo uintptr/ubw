@@ -58,7 +58,7 @@ pub enum Error {
     KeyAgreementFailure,
     #[error("Hello Failure")]
     HelloFailure,
-    #[error("Invaliud Command Response")]
+    #[error("Invalid Command Response")]
     InvalidCommandResponse,
 
     //

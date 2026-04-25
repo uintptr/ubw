@@ -35,7 +35,7 @@ pub enum Commands {
     Password(IdArgs),
     /// List SSH keys
     SshKeys,
-    /// List Loginms
+    /// List Logins
     Logins,
     /// Logout
     Logout,
@@ -50,7 +50,7 @@ pub struct UserArgs {
     #[arg(short, long)]
     pub verbose: bool,
 
-    /// Comamnd
+    /// Command
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -136,7 +136,7 @@ fn main() -> Result<()> {
         && !a.stop
     {
         //
-        // Not stoping and not in the foreground
+        // Not stopping and not in the foreground
         //
         daemonize()?;
     }

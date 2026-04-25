@@ -161,7 +161,7 @@ impl ClientHandler {
             .context("Failed to initialize server protocol handler for client")?;
 
         loop {
-            info!("wating for a request");
+            info!("waiting for a request");
 
             let req = client.get_request().await.context("Failed to receive request from client")?;
 

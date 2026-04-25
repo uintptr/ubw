@@ -130,7 +130,7 @@ impl UBWAgent {
             }
         }
 
-        warn!("no session not found");
+        warn!("no session found");
 
         let creds = self.credentials_fetch().await?;
 
