@@ -1,12 +1,12 @@
 use clap::Args;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 pub mod x11;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 pub use x11::command_xsecurelock;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 mod noop;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 pub use noop::command_xsecurelock;
 
 #[derive(Args)]
