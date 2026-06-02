@@ -31,6 +31,8 @@ ubitwarden-agent = { path = "../ubitwarden-agent" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nix.workspace = true
+
+[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
 x11rb.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
