@@ -1,3 +1,5 @@
+use std::sync::Once;
+
 use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -9,6 +11,18 @@ use crate::{
 };
 
 const UBW_DEVICE_ID: &str = "2c28ca63-da34-452d-9d54-3180c2d1165e";
+
+static TLS_PROVIDER: Once = Once::new();
+
+/// Install the ring crypto provider as the process-wide rustls default.
+///
+/// reqwest is built with `rustls-no-provider`, so it relies on a default
+/// `CryptoProvider` being installed before the first client is constructed.
+fn ensure_crypto_provider() {
+    TLS_PROVIDER.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
 
 #[derive(Debug, Serialize)]
 struct BwPreLoginRequest<'a> {
@@ -49,6 +63,8 @@ impl BwApi {
         E: AsRef<str>,
         S: AsRef<str>,
     {
+        ensure_crypto_provider();
+
         Ok(Self {
             client: Client::new(),
             email: email.as_ref().into(),
@@ -238,6 +254,8 @@ impl BwApi {
         let prelogin_url = format!("{}/identity/accounts/prelogin", self.server);
 
         let req_data = BwPreLoginRequest { email: &self.email };
+
+        ensure_crypto_provider();
 
         let data = Client::new()
             .post(prelogin_url)

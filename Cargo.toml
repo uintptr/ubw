@@ -31,9 +31,15 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 reqwest = { version = "0.13", default-features = false, features = [
   "form",
   "json",
-  "rustls"
+  "rustls-no-provider"
 ] }
 rsa = "0.9"
+rustls = { version = "0.23", default-features = false, features = [
+  "logging",
+  "ring",
+  "std",
+  "tls12"
+] }
 rstaples = "0.4"
 rust-embed = "8.11"
 secrecy = "0.10"
