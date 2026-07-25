@@ -3,7 +3,7 @@ resolver = "2"
 members = ["ubitwarden-agent", "ubitwarden-api", "ubw", "ubw-moz"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 
 [workspace.dependencies]
@@ -51,11 +51,11 @@ totp-rs = { version = "5.7", features = ["otpauth"] }
 ureq = {
   version = "3.3",
   default-features = false,
-  features = ["rustls", "platform-verifier"]
+  features = ["platform-verifier", "rustls"]
 }
 whoami = "2"
 x11rb = { version = "0.13", features = ["allow-unsafe-code", "randr"] }
-zeroize = "1.8"
+zeroize = "1.9"
 
 #
 # LINT
