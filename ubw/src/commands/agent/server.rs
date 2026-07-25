@@ -1,19 +1,23 @@
-use std::{env, time::Duration};
+use std::{
+    env, fs,
+    path::Path,
+    process::Command,
+    sync::mpsc::{self, Sender},
+    thread,
+    time::Duration,
+};
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use log::{error, info, warn};
-use tokio::{
-    process::Command,
-    select,
-    signal::unix::{SignalKind, signal},
-    sync::watch::{self},
-    time::sleep,
+use signal_hook::{
+    consts::{SIGHUP, SIGINT, SIGTERM},
+    iterator::Signals,
 };
 use ubitwarden_agent::agent::UBWAgent;
 
 use crate::{
-    commands::agent::{credentials::CacheServer, ssh::SshAgentServer},
+    commands::agent::{ShutdownReason, credentials::CacheServer, signal_shutdown, ssh::SshAgentServer},
     common::UBW_APP_VERSION,
 };
 
@@ -30,72 +34,90 @@ pub struct AgentArgs {
     pub foreground: bool,
 }
 
-async fn signal_handlers() -> Result<()> {
-    let mut sighup = signal(SignalKind::hangup())?;
-    let mut sigterm = signal(SignalKind::terminate())?;
-    let mut sigint = signal(SignalKind::interrupt())?;
+/// Watch for the signals we care about on a thread of its own.
+///
+/// SIGHUP is logged and ignored, the other two bring the daemon down.
+fn signal_handlers(shutdown: &Sender<ShutdownReason>) -> Result<()> {
+    let mut signals = Signals::new([SIGHUP, SIGINT, SIGTERM]).context("Failed to install signal handlers")?;
 
-    loop {
-        select! {
-            _ = sighup.recv() => {
-                info!("ignoring SIGHUP");
+    for signal in &mut signals {
+        match signal {
+            SIGHUP => info!("ignoring SIGHUP"),
+            SIGINT => {
+                signal_shutdown(shutdown, ShutdownReason::Signal("SIGINT"));
+                return Ok(());
             }
-            _ = sigint.recv() => {
-                info!("received SIGINT. We're leaving");
-                break Ok(())
+            SIGTERM => {
+                signal_shutdown(shutdown, ShutdownReason::Signal("SIGTERM"));
+                return Ok(());
             }
-            _ = sigterm.recv() => {
-                info!("received SIGTERM. We're leaving");
-                break Ok(())
-            }
+            other => warn!("ignoring unexpected signal {other}"),
         }
+    }
+
+    Ok(())
+}
+
+fn unlink_socket(socket_path: &Path) {
+    //
+    // Linux uses an abstract socket for the cache, which has nothing to unlink
+    //
+    if !socket_path.exists() {
+        return;
+    }
+
+    info!("Deleting {}", socket_path.display());
+
+    if let Err(e) = fs::remove_file(socket_path) {
+        error!("Unable to delete {} ({e})", socket_path.display());
     }
 }
 
-async fn cache_server() -> Result<()> {
+/// Run both listeners until something asks us to stop.
+///
+/// The listeners and their clients each get a thread and a [`Sender`]. The main
+/// thread parks on the receiver, which is the one place a shutdown can be
+/// decided, and returning from here ends the process along with those threads.
+fn cache_server() -> Result<()> {
     let creds_server = CacheServer::new().context("Failed to initialize credentials cache server")?;
-    let ssh_server = SshAgentServer::new();
+    let ssh_server = SshAgentServer::new().context("Failed to initialize ssh-agent server")?;
 
-    let (quit_tx, quit_rx) = watch::channel(false);
+    let creds_socket = creds_server.socket_path().to_path_buf();
+    let ssh_socket = ssh_server.socket_path().to_path_buf();
 
-    let mut creds_done = false;
-    let mut ssh_done = false;
+    let (shutdown_tx, shutdown_rx) = mpsc::channel();
 
-    loop {
-        select! {
-            _ = signal_handlers() => {
-                quit_tx.send(true)?;
+    let signals_tx = shutdown_tx.clone();
+    thread::Builder::new()
+        .name("signals".into())
+        .spawn(move || {
+            if let Err(e) = signal_handlers(&signals_tx) {
+                error!("signal handler failed ({e})");
             }
-            ret = creds_server.accept_loop(quit_rx.clone()), if !creds_done => {
-                warn!("credentials thread returned, signaling shutdown");
-                // signal the other thread to return
-                quit_tx.send(true)?;
-                creds_done = true;
+        })
+        .context("Failed to spawn the signal thread")?;
 
-                if let Err(e) = ret{
-                    error!("credentials thread failed with error {e}");
-                }
+    let creds_tx = shutdown_tx.clone();
+    thread::Builder::new()
+        .name("creds-listener".into())
+        .spawn(move || creds_server.accept_loop(&creds_tx))
+        .context("Failed to spawn the credentials listener thread")?;
 
-                if creds_done && ssh_done {
-                    break;
-                }
-            }
-            ret = ssh_server.accept_loop(quit_rx.clone()), if !ssh_done => {
-                warn!("ssh-agent thread returned, signaling shutdown");
-                // signal the other thread to return
-                quit_tx.send(true)?;
-                ssh_done = true;
+    thread::Builder::new()
+        .name("ssh-listener".into())
+        .spawn(move || ssh_server.accept_loop(&shutdown_tx))
+        .context("Failed to spawn the ssh-agent listener thread")?;
 
-                if let Err(e) = ret{
-                    error!("ssh-agent thread failed with error {e}");
-                }
-
-                if creds_done && ssh_done {
-                    break;
-                }
-            }
-        }
+    //
+    // Nothing left to do but wait for a reason to leave
+    //
+    match shutdown_rx.recv() {
+        Ok(reason) => info!("shutting down: {reason}"),
+        Err(e) => error!("every shutdown sender is gone ({e})"),
     }
+
+    unlink_socket(&creds_socket);
+    unlink_socket(&ssh_socket);
 
     Ok(())
 }
@@ -104,7 +126,7 @@ async fn cache_server() -> Result<()> {
 // PUBLIC
 ////////////////////////////////////////////////////////////////////////////////
 
-pub async fn spawn_server() -> Result<UBWAgent> {
+pub fn spawn_server() -> Result<UBWAgent> {
     let self_exe = env::current_exe().context("Failed to determine path to current executable")?;
 
     info!("spawning {}", self_exe.display());
@@ -119,33 +141,33 @@ pub async fn spawn_server() -> Result<UBWAgent> {
     // wait until we can ping it
     //
     for i in 0..SPAWN_WAIT_TIMEOUT {
-        if let Ok(a) = UBWAgent::client().await {
+        if let Ok(a) = UBWAgent::client() {
             return Ok(a);
         }
         info!("server is not ready...{i}/{SPAWN_WAIT_TIMEOUT}");
-        sleep(Duration::from_secs(1)).await;
+        thread::sleep(Duration::from_secs(1));
     }
 
     bail!("Failed to connect to credential server after {SPAWN_WAIT_TIMEOUT} attempts")
 }
 
-pub async fn command_agent(args: AgentArgs) -> Result<()> {
-    match UBWAgent::client().await {
+pub fn command_agent(args: &AgentArgs) -> Result<()> {
+    match UBWAgent::client() {
         Ok(mut v) => {
             //
             // server is running
             //
             if args.stop {
                 warn!("stopping the server");
-                v.quit().await?;
+                v.quit()?;
 
                 // Wait until ping fails
                 for _ in 0..20 {
-                    if UBWAgent::client().await.is_err() {
+                    if UBWAgent::client().is_err() {
                         info!("server stopped");
                         return Ok(());
                     }
-                    sleep(Duration::from_millis(100)).await;
+                    thread::sleep(Duration::from_millis(100));
                 }
 
                 bail!("Unable to stop server");
@@ -167,7 +189,7 @@ pub async fn command_agent(args: AgentArgs) -> Result<()> {
                 //
                 // this blocks!
                 //
-                cache_server().await?;
+                cache_server()?;
                 Ok(())
             }
         }

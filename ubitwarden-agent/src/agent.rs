@@ -1,6 +1,6 @@
-use std::{ops::Deref, path::PathBuf};
+use std::{io, ops::Deref, path::PathBuf};
 
-use tokio::net::UnixStream;
+use std::os::unix::net::UnixStream;
 use ubitwarden::{
     api::BwApi,
     credentials::BwCredentials,
@@ -13,10 +13,22 @@ use crate::{
     encrypted_channel::EncryptedChannel,
     messages::{ChannelRequest, ChannelResponse, send_message},
 };
-use log::{error, warn};
+use log::{error, info, warn};
 
 pub struct UBWAgent {
     stream: EncryptedChannel<UnixStream>,
+}
+
+/// Did the peer hang up on us?
+///
+/// A half read message reaches us as an unexpected EOF, and a peer that is
+/// already gone shows up as a reset or a broken pipe.
+#[must_use]
+pub fn is_disconnect(e: &io::Error) -> bool {
+    matches!(
+        e.kind(),
+        io::ErrorKind::UnexpectedEof | io::ErrorKind::ConnectionReset | io::ErrorKind::BrokenPipe
+    )
 }
 
 pub const UBW_DATA_DIR: &str = env!("CARGO_PKG_NAME");
@@ -50,40 +62,47 @@ pub fn create_socket_name() -> Result<PathBuf> {
 }
 
 impl UBWAgent {
-    pub async fn client() -> Result<Self> {
+    pub fn client() -> Result<Self> {
         let socket_name = create_socket_name()?;
 
-        let unix_stream = UnixStream::connect(socket_name).await?;
-        let stream = EncryptedChannel::connect(unix_stream).await?;
+        let unix_stream = UnixStream::connect(socket_name)?;
+        let stream = EncryptedChannel::connect(unix_stream)?;
 
         Ok(Self { stream })
     }
 
-    pub async fn server(client: UnixStream) -> Result<Self> {
-        let stream = EncryptedChannel::listen(client).await?;
+    pub fn server(client: UnixStream) -> Result<Self> {
+        let stream = EncryptedChannel::listen(client)?;
 
         Ok(Self { stream })
     }
 
-    pub async fn quit(&mut self) -> Result<bool> {
+    pub fn quit(&mut self) -> Result<bool> {
         let msg = ChannelRequest::Stop;
 
-        let res = send_message(&mut self.stream, msg).await?;
-
-        let ChannelResponse::Status(success) = res else {
-            return Err(Error::InvalidCommandResponse);
-        };
-
-        Ok(success)
+        //
+        // The server acknowledges a stop by going away rather than by
+        // answering. Our request made it out the door, otherwise the write
+        // would have failed, so losing the connection here means it worked.
+        //
+        match send_message(&mut self.stream, &msg) {
+            Ok(ChannelResponse::Status(success)) => Ok(success),
+            Ok(_) => Err(Error::InvalidCommandResponse),
+            Err(Error::Io(e)) if is_disconnect(&e) => {
+                info!("server closed the connection ({})", e.kind());
+                Ok(true)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     //
     // Session
     //
-    pub async fn delete_session(&mut self) -> Result<bool> {
+    pub fn delete_session(&mut self) -> Result<bool> {
         let msg = ChannelRequest::SessionDelete;
 
-        let res = send_message(&mut self.stream, msg).await?;
+        let res = send_message(&mut self.stream, &msg)?;
 
         let ChannelResponse::Status(success) = res else {
             return Err(Error::InvalidCommandResponse);
@@ -92,10 +111,10 @@ impl UBWAgent {
         Ok(success)
     }
 
-    pub async fn session_fetch(&mut self) -> Result<BwSession> {
+    pub fn session_fetch(&mut self) -> Result<BwSession> {
         let msg = ChannelRequest::SessionFetch;
 
-        let res = send_message(&mut self.stream, msg).await?;
+        let res = send_message(&mut self.stream, &msg)?;
 
         let ChannelResponse::SessionFetch(session_data) = res else {
             return Err(Error::InvalidCommandResponse);
@@ -106,10 +125,10 @@ impl UBWAgent {
         Ok(session)
     }
 
-    pub async fn session_store(&mut self, session: &BwSession) -> Result<bool> {
+    pub fn session_store(&mut self, session: &BwSession) -> Result<bool> {
         let msg = ChannelRequest::SessionStore(session.deref().clone());
 
-        let res = send_message(&mut self.stream, msg).await?;
+        let res = send_message(&mut self.stream, &msg)?;
 
         let ChannelResponse::Status(success) = res else {
             return Err(Error::InvalidCommandResponse);
@@ -118,8 +137,8 @@ impl UBWAgent {
         Ok(success)
     }
 
-    pub async fn session_load(&mut self) -> Result<BwSession> {
-        if let Ok(session) = self.session_fetch().await {
+    pub fn session_load(&mut self) -> Result<BwSession> {
+        if let Ok(session) = self.session_fetch() {
             if session.expired()? {
                 warn!("session expired");
                 //
@@ -132,19 +151,19 @@ impl UBWAgent {
 
         warn!("no session found");
 
-        let creds = self.credentials_fetch().await?;
+        let creds = self.credentials_fetch()?;
 
         //
         // Either it didn't exist or it was expired. let's rejoin
         //
         let api = BwApi::new(&creds.email, &creds.server_url)?;
 
-        let auth = api.auth(&creds.password).await?;
+        let auth = api.auth(&creds.password)?;
 
         let session = BwSession::new(&creds, &auth)?;
 
         // best effort. not fatal since we got what we wanted
-        if let Err(e) = self.session_store(&session).await {
+        if let Err(e) = self.session_store(&session) {
             error!("Unable to store session: ({e})");
         }
 
@@ -154,10 +173,10 @@ impl UBWAgent {
     //
     // Credentials
     //
-    pub async fn credentials_delete(&mut self) -> Result<bool> {
+    pub fn credentials_delete(&mut self) -> Result<bool> {
         let msg = ChannelRequest::CredentialsDelete;
 
-        let res = send_message(&mut self.stream, msg).await?;
+        let res = send_message(&mut self.stream, &msg)?;
 
         let ChannelResponse::Status(success) = res else {
             return Err(Error::InvalidCommandResponse);
@@ -166,10 +185,10 @@ impl UBWAgent {
         Ok(success)
     }
 
-    pub async fn credentials_fetch(&mut self) -> Result<BwCredentials> {
+    pub fn credentials_fetch(&mut self) -> Result<BwCredentials> {
         let msg = ChannelRequest::CredentialsFetch;
 
-        let res = send_message(&mut self.stream, msg).await?;
+        let res = send_message(&mut self.stream, &msg)?;
 
         let ChannelResponse::CredentialsFetch(credentials) = res else {
             return Err(Error::InvalidCommandResponse);
@@ -178,7 +197,7 @@ impl UBWAgent {
         Ok(credentials)
     }
 
-    pub async fn credentials_store<E, P, U>(&mut self, email: E, server_url: U, password: P) -> Result<bool>
+    pub fn credentials_store<E, P, U>(&mut self, email: E, server_url: U, password: P) -> Result<bool>
     where
         E: Into<String>,
         U: Into<String>,
@@ -192,7 +211,7 @@ impl UBWAgent {
 
         let msg = ChannelRequest::CredentialsStore(creds);
 
-        let res = send_message(&mut self.stream, msg).await?;
+        let res = send_message(&mut self.stream, &msg)?;
 
         let ChannelResponse::Status(success) = res else {
             return Err(Error::InvalidCommandResponse);
@@ -201,11 +220,11 @@ impl UBWAgent {
         Ok(success)
     }
 
-    pub async fn get_request(&mut self) -> Result<ChannelRequest> {
-        ChannelRequest::read(&mut self.stream).await
+    pub fn get_request(&mut self) -> Result<ChannelRequest> {
+        ChannelRequest::read(&mut self.stream)
     }
 
-    pub async fn send_response(&mut self, resp: ChannelResponse) -> Result<()> {
-        resp.write(&mut self.stream).await
+    pub fn send_response(&mut self, resp: &ChannelResponse) -> Result<()> {
+        resp.write(&mut self.stream)
     }
 }

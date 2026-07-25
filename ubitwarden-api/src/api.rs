@@ -1,8 +1,11 @@
-use std::sync::Once;
+use std::time::Duration;
 
 use log::info;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use ureq::{
+    Agent,
+    tls::{RootCerts, TlsConfig},
+};
 
 use crate::{
     api_types::{BwAuth, BwCipher, BwCipherData, BwCipherType, BwPreLogin, BwSync},
@@ -12,16 +15,27 @@ use crate::{
 
 const UBW_DEVICE_ID: &str = "2c28ca63-da34-452d-9d54-3180c2d1165e";
 
-static TLS_PROVIDER: Once = Once::new();
+/// Applies to the whole request, connect and body read included.
+const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Install the ring crypto provider as the process-wide rustls default.
+/// ureq defaults to 10MB, which a large vault could realistically exceed.
+const MAX_BODY_SIZE: u64 = 64 * 1024 * 1024;
+
+/// Build the HTTP agent used for every request of a [`BwApi`].
 ///
-/// reqwest is built with `rustls-no-provider`, so it relies on a default
-/// `CryptoProvider` being installed before the first client is constructed.
-fn ensure_crypto_provider() {
-    TLS_PROVIDER.call_once(|| {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-    });
+/// Certificates are validated against the OS trust store so that self-hosted
+/// servers using a privately issued certificate keep working.
+fn build_agent() -> Agent {
+    let tls_config = TlsConfig::builder().root_certs(RootCerts::PlatformVerifier).build();
+
+    let config = Agent::config_builder()
+        .tls_config(tls_config)
+        .timeout_global(Some(HTTP_TIMEOUT))
+        // We check statuses ourselves, so a 4xx is a response and not an error.
+        .http_status_as_error(false)
+        .build();
+
+    Agent::new_with_config(config)
 }
 
 #[derive(Debug, Serialize)]
@@ -36,23 +50,8 @@ struct BwCipherResponse {
     pub data: Vec<BwCipher>,
 }
 
-#[derive(Debug, Serialize)]
-struct LoginRequest<'a> {
-    grant_type: &'a str,
-    username: &'a str,
-    password: &'a str,
-    scope: &'a str,
-    client_id: &'a str,
-    #[serde(rename = "deviceType")]
-    device_type: &'a str,
-    #[serde(rename = "deviceIdentifier")]
-    device_identifier: &'a str,
-    #[serde(rename = "deviceName")]
-    device_name: &'a str,
-}
-
 pub struct BwApi {
-    client: Client,
+    agent: Agent,
     email: String,
     server: String,
 }
@@ -63,16 +62,43 @@ impl BwApi {
         E: AsRef<str>,
         S: AsRef<str>,
     {
-        ensure_crypto_provider();
-
         Ok(Self {
-            client: Client::new(),
+            agent: build_agent(),
             email: email.as_ref().into(),
             server: server.as_ref().into(),
         })
     }
 
-    async fn ciphers_with_type(&self, auth: &BwAuth, cipher_type: BwCipherType) -> Result<Vec<BwCipher>> {
+    /// Read a response body, failing on a non success status.
+    fn read_body(mut resp: ureq::http::Response<ureq::Body>) -> Result<String> {
+        let status = resp.status();
+
+        if !status.is_success() {
+            return Err(Error::HttpStatus(status.as_u16()));
+        }
+
+        let body = resp.body_mut().with_config().limit(MAX_BODY_SIZE).read_to_string()?;
+
+        Ok(body)
+    }
+
+    /// Authenticated GET returning a deserialized body.
+    fn get_json<T>(&self, url: &str, auth: &BwAuth) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        let resp = self
+            .agent
+            .get(url)
+            .header("Authorization", format!("Bearer {}", auth.access_token))
+            .call()?;
+
+        let body = Self::read_body(resp)?;
+
+        Ok(serde_json::from_str(&body)?)
+    }
+
+    fn ciphers_with_type(&self, auth: &BwAuth, cipher_type: BwCipherType) -> Result<Vec<BwCipher>> {
         let mut cont_token = None;
 
         let mut ciphers = Vec::new();
@@ -88,14 +114,7 @@ impl BwApi {
                 format!("{}/api/ciphers?type={cipher_type}", self.server)
             };
 
-            let resp = self
-                .client
-                .get(ciphers_url)
-                .bearer_auth(&auth.access_token)
-                .send()
-                .await?
-                .json::<BwCipherResponse>()
-                .await?;
+            let resp: BwCipherResponse = self.get_json(&ciphers_url, auth)?;
 
             ciphers.extend(resp.data);
 
@@ -113,7 +132,7 @@ impl BwApi {
     // PUBLIC
     ////////////////////////////////////////////////////////////////////////////
 
-    pub async fn auth<S>(&self, password: S) -> Result<BwAuth>
+    pub fn auth<S>(&self, password: S) -> Result<BwAuth>
     where
         S: AsRef<str>,
     {
@@ -121,76 +140,49 @@ impl BwApi {
 
         let auth_url = format!("{}/identity/connect/token", self.server);
 
-        let pre = self.prelogin().await?;
+        let pre = self.prelogin()?;
 
         let password_hash = build_password_hash(pre.kdf_iterations, &self.email, password.as_ref())?;
 
-        let login_req = LoginRequest {
-            grant_type: "password",
-            username: &self.email,
-            password: &password_hash,
-            scope: "api offline_access",
-            client_id: "web",
-            device_type: "10",
-            device_identifier: UBW_DEVICE_ID,
-            device_name: "ubw",
-        };
+        let login_req = [
+            ("grant_type", "password"),
+            ("username", self.email.as_str()),
+            ("password", password_hash.as_str()),
+            ("scope", "api offline_access"),
+            ("client_id", "web"),
+            ("deviceType", "10"),
+            ("deviceIdentifier", UBW_DEVICE_ID),
+            ("deviceName", "ubw"),
+        ];
 
-        let ret = self
-            .client
-            .post(auth_url)
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .form(&login_req)
-            .send()
-            .await?;
+        let resp = self.agent.post(&auth_url).send_form(login_req)?;
 
-        if !ret.status().is_success() {
+        if !resp.status().is_success() {
             return Err(Error::AuthFailure);
         }
 
-        let text = ret.text().await?;
+        let text = Self::read_body(resp)?;
         let auth: BwAuth = serde_json::from_str(&text)?;
 
         Ok(auth)
     }
 
-    pub async fn sync(&self, auth: &BwAuth) -> Result<BwSync> {
+    pub fn sync(&self, auth: &BwAuth) -> Result<BwSync> {
         let sync_url = format!("{}/api/sync?excludeDomains=true", self.server);
 
-        let data = self
-            .client
-            .get(sync_url)
-            .bearer_auth(&auth.access_token)
-            .send()
-            .await?
-            .json::<BwSync>()
-            .await?;
-        Ok(data)
+        self.get_json(&sync_url, auth)
     }
 
-    pub async fn cipher<I>(&self, auth: &BwAuth, id: I) -> Result<BwCipher>
+    pub fn cipher<I>(&self, auth: &BwAuth, id: I) -> Result<BwCipher>
     where
         I: AsRef<str>,
     {
         let url = format!("{}/api/ciphers/{}", self.server, id.as_ref());
 
-        let cipher_dict = self
-            .client
-            .get(url)
-            .bearer_auth(&auth.access_token)
-            .send()
-            .await?
-            .json::<serde_json::Value>()
-            .await?;
-
-        //dbg!(&cipher_dict);
-
-        let cipher: BwCipher = serde_json::from_value(cipher_dict)?;
-
-        Ok(cipher)
+        self.get_json(&url, auth)
     }
 
-    pub async fn ciphers(&self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
+    pub fn ciphers(&self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
         let mut cont_token = None;
 
         let mut ciphers = Vec::new();
@@ -202,11 +194,7 @@ impl BwApi {
                 format!("{}/api/ciphers", self.server)
             };
 
-            let ret = self.client.get(ciphers_url).bearer_auth(&auth.access_token).send().await?;
-
-            let value = ret.json::<serde_json::Value>().await?;
-
-            let resp: BwCipherResponse = serde_json::from_value(value)?;
+            let resp: BwCipherResponse = self.get_json(&ciphers_url, auth)?;
 
             ciphers.extend(resp.data);
 
@@ -220,26 +208,26 @@ impl BwApi {
         Ok(ciphers)
     }
 
-    pub async fn ssh_keys(&self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
-        self.ciphers_with_type(auth, BwCipherType::Ssh).await
+    pub fn ssh_keys(&self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
+        self.ciphers_with_type(auth, BwCipherType::Ssh)
     }
 
-    pub async fn logins(&self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
-        self.ciphers_with_type(auth, BwCipherType::Login).await
+    pub fn logins(&self, auth: &BwAuth) -> Result<Vec<BwCipher>> {
+        self.ciphers_with_type(auth, BwCipherType::Login)
     }
 
-    pub async fn login<I>(&self, auth: &BwAuth, id: I) -> Result<BwCipher>
+    pub fn login<I>(&self, auth: &BwAuth, id: I) -> Result<BwCipher>
     where
         I: AsRef<str>,
     {
-        self.cipher(auth, id).await
+        self.cipher(auth, id)
     }
 
-    pub async fn totp<I>(&self, auth: &BwAuth, id: I) -> Result<String>
+    pub fn totp<I>(&self, auth: &BwAuth, id: I) -> Result<String>
     where
         I: AsRef<str>,
     {
-        let cipher = self.cipher(auth, id).await?;
+        let cipher = self.cipher(auth, id)?;
 
         if let BwCipherData::Login(login) = cipher.data
             && let Some(encrypted_totp) = &login.totp
@@ -250,22 +238,19 @@ impl BwApi {
         }
     }
 
-    pub async fn prelogin(&self) -> Result<BwPreLogin> {
+    pub fn prelogin(&self) -> Result<BwPreLogin> {
         let prelogin_url = format!("{}/identity/accounts/prelogin", self.server);
 
         let req_data = BwPreLoginRequest { email: &self.email };
 
-        ensure_crypto_provider();
-
-        let data = Client::new()
-            .post(prelogin_url)
+        let resp = self
+            .agent
+            .post(&prelogin_url)
             .header("Content-Type", "application/json")
-            .json(&req_data)
-            .send()
-            .await?
-            .json::<BwPreLogin>()
-            .await?;
+            .send(serde_json::to_string(&req_data)?)?;
 
-        Ok(data)
+        let body = Self::read_body(resp)?;
+
+        Ok(serde_json::from_str(&body)?)
     }
 }

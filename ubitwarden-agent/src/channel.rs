@@ -1,35 +1,37 @@
+use std::io::{Read, Write};
+
 use serde::{Serialize, de::DeserializeOwned};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use ubitwarden::error::Result;
 
 pub trait AgentChannelTrait: Serialize {
-    #[allow(async_fn_in_trait)]
-    async fn write<W>(&self, stream: &mut W) -> Result<()>
+    fn write<W>(&self, stream: &mut W) -> Result<()>
     where
-        W: AsyncWriteExt + Unpin,
+        W: Write,
     {
         let data = serde_json::to_string(self)?;
 
         let len: u32 = data.len().try_into()?;
 
-        stream.write_u32(len).await?;
-        stream.write_all(data.as_bytes()).await?;
-        stream.flush().await?;
+        stream.write_all(&len.to_be_bytes())?;
+        stream.write_all(data.as_bytes())?;
+        stream.flush()?;
 
         Ok(())
     }
 
-    #[allow(async_fn_in_trait)]
-    async fn read<D, R>(stream: &mut R) -> Result<D>
+    fn read<D, R>(stream: &mut R) -> Result<D>
     where
         D: DeserializeOwned,
-        R: AsyncReadExt + Unpin,
+        R: Read,
     {
-        let len: usize = stream.read_u32().await?.try_into()?;
+        let mut len_buf = [0u8; 4];
+        stream.read_exact(&mut len_buf)?;
+
+        let len: usize = u32::from_be_bytes(len_buf).try_into()?;
 
         let mut buf = vec![0u8; len];
 
-        stream.read_exact(&mut buf).await?;
+        stream.read_exact(&mut buf)?;
 
         let req: D = serde_json::from_slice(&buf)?;
 

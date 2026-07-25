@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use localauthentication_rs::{LAPolicy, LocalAuthentication};
 
-pub async fn biometric_login() -> Result<()> {
+pub fn biometric_login() -> Result<()> {
     let local_authentication = LocalAuthentication::new();
 
     let authenticated = local_authentication.evaluate_policy(

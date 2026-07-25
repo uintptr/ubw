@@ -28,19 +28,8 @@ nix = { version = "0.31", features = ["user"] }
 orion = "0.17"
 pidlock = "0.2"
 rand_core = { version = "0.6", features = ["getrandom"] }
-reqwest = {
-  version = "0.13",
-  default-features = false,
-  features = ["form", "json", "rustls-no-provider"]
-}
 rsa = "0.9"
 rstaples = "0.4"
-rust-embed = "8.11"
-rustls = {
-  version = "0.23",
-  default-features = false,
-  features = ["logging", "ring", "std", "tls12"]
-}
 secrecy = "0.10"
 security-framework = "3.7"
 serde = { version = "1.0", features = ["derive"] }
@@ -48,13 +37,22 @@ serde_json = "1.0"
 serde_repr = "0.1"
 sha1 = "0.10"
 sha2 = "0.10"
+signal-hook = "0.3"
 signature = "2.2"
-ssh-agent-lib = "0.5"
+# default-features would pull the tokio based agent server in; we only need
+# the wire protocol types and run our own blocking accept loop.
+ssh-agent-lib = { version = "0.5", default-features = false }
 tabled = "0.20"
 thiserror = "2.0"
-tokio = { version = "1.50", features = ["full"] }
 totp-rs = { version = "5.7", features = ["otpauth"] }
-which = "8.0"
+# "rustls" pulls in ring as the crypto provider, keeping aws-lc-sys out of the
+# build. "platform-verifier" keeps validating certificates against the OS trust
+# store, like reqwest's rustls-no-provider used to.
+ureq = {
+  version = "3.3",
+  default-features = false,
+  features = ["rustls", "platform-verifier"]
+}
 whoami = "2"
 x11rb = { version = "0.13", features = ["allow-unsafe-code", "randr"] }
 zeroize = "1.8"

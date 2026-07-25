@@ -4,7 +4,7 @@ use ubitwarden_agent::agent::UBWAgent;
 
 use anyhow::{Context, Result};
 use log::{error, info};
-use tokio::io::{self, AsyncReadExt};
+use std::io::{self, Read};
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::xproto::{ConfigureWindowAux, ConnectionExt, CreateGCAux, Rectangle, StackMode};
@@ -144,7 +144,7 @@ fn detect_monitors(conn: &impl Connection, root: u32) -> Result<Vec<Monitor>> {
     }])
 }
 
-async fn read_password(prompt: &str) -> Result<Vec<u8>> {
+fn read_password(prompt: &str) -> Result<Vec<u8>> {
     let mut buf = [0u8; 1];
     let mut chars = Vec::new();
 
@@ -248,7 +248,7 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
     draw_prompt_text(&conn, drawable, gc, &monitors, prompt)?;
 
     loop {
-        reader.read_exact(&mut buf).await.context("Failed to read password input")?;
+        reader.read_exact(&mut buf).context("Failed to read password input")?;
 
         if buf[0] == b'\n' || buf[0] == b'\r' {
             break;
@@ -285,29 +285,26 @@ async fn read_password(prompt: &str) -> Result<Vec<u8>> {
     Ok(chars)
 }
 
-async fn store_password(args: &XSecureLockArgs, password: &str) -> Result<()> {
-    let mut agent = if let Ok(v) = UBWAgent::client().await {
+fn store_password(args: &XSecureLockArgs, password: &str) -> Result<()> {
+    let mut agent = if let Ok(v) = UBWAgent::client() {
         v
     } else {
         info!("unable to talk to the server. spawning a new one");
-        spawn_server().await.context("Failed to spawn credential cache server")?;
-        UBWAgent::client()
-            .await
-            .context("Failed to connect to credential cache server after spawning")?
+        spawn_server().context("Failed to spawn credential cache server")?;
+        UBWAgent::client().context("Failed to connect to credential cache server after spawning")?
     };
 
     agent
         .credentials_store(&args.email, &args.server_url, password)
-        .await
         .context("Failed to store credentials in cache")?;
 
     Ok(())
 }
 
-pub async fn command_xsecurelock(args: XSecureLockArgs) -> Result<()> {
+pub fn command_xsecurelock(args: &XSecureLockArgs) -> Result<()> {
     let prompt = format!("Password for {}", args.email);
 
-    let password_chars = read_password(&prompt).await?;
+    let password_chars = read_password(&prompt)?;
 
     let password = String::from_utf8(password_chars).context("Password contains invalid UTF-8 characters")?;
 
@@ -318,12 +315,12 @@ pub async fn command_xsecurelock(args: XSecureLockArgs) -> Result<()> {
     let api = BwApi::new(&args.email, &args.server_url)
         .with_context(|| format!("Failed to initialize API client for {}", args.email))?;
 
-    if let Err(e) = api.auth(&password).await {
+    if let Err(e) = api.auth(&password) {
         error!("auth failure");
         return Err(e).context("Authentication failed");
     }
 
-    if let Err(e) = store_password(&args, &password).await {
+    if let Err(e) = store_password(args, &password) {
         error!("Unable to store password ({e})");
     }
 

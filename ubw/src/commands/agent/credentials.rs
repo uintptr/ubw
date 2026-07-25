@@ -1,22 +1,25 @@
-use std::{fs, sync::Arc};
+use std::{
+    fs,
+    os::unix::net::{UnixListener, UnixStream},
+    path::{Path, PathBuf},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, mpsc::Sender},
+    thread,
+};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
 use log::{error, info, warn};
 use secrecy::zeroize::Zeroize;
-use tokio::{
-    net::{UnixListener, UnixStream},
-    select,
-    sync::{RwLock, watch::Receiver},
-    task::JoinSet,
-};
 use ubitwarden::{credentials::BwCredentials, error::Error, session::BwSessionData};
 use ubitwarden_agent::{
-    agent::{UBWAgent, create_socket_name},
+    agent::{UBWAgent, create_socket_name, is_disconnect},
     messages::{ChannelRequest, ChannelResponse},
 };
 
-use crate::commands::agent::storage::{CredStorage, CredStorageTrait};
+use crate::commands::agent::{
+    ShutdownReason, signal_shutdown,
+    storage::{CredStorage, CredStorageTrait},
+};
 
 #[derive(Args)]
 pub struct CacheArgs {
@@ -32,6 +35,7 @@ struct ClientHandler {
 pub struct CacheServer {
     listener: UnixListener,
     storage_lock: Arc<RwLock<CredStorage>>,
+    socket_path: PathBuf,
 }
 
 #[cfg(target_os = "linux")]
@@ -72,13 +76,25 @@ impl ClientHandler {
         Self { storage_lock }
     }
 
+    fn read_store(&self) -> Result<RwLockReadGuard<'_, CredStorage>> {
+        self.storage_lock
+            .read()
+            .map_err(|_| anyhow!("credential storage lock was poisoned"))
+    }
+
+    fn write_store(&self) -> Result<RwLockWriteGuard<'_, CredStorage>> {
+        self.storage_lock
+            .write()
+            .map_err(|_| anyhow!("credential storage lock was poisoned"))
+    }
+
     //
     // Session
     //
-    async fn session_store(&self, data: BwSessionData) -> Result<ChannelResponse> {
-        let mut session_string = serde_json::to_string(&data)?;
+    fn session_store(&self, data: &BwSessionData) -> Result<ChannelResponse> {
+        let mut session_string = serde_json::to_string(data)?;
 
-        let mut store = self.storage_lock.write().await;
+        let mut store = self.write_store()?;
 
         let success = store.add("session", &session_string).is_ok();
 
@@ -87,8 +103,8 @@ impl ClientHandler {
         Ok(ChannelResponse::Status(success))
     }
 
-    async fn session_fetch(&self) -> Result<ChannelResponse> {
-        let store = self.storage_lock.read().await;
+    fn session_fetch(&self) -> Result<ChannelResponse> {
+        let store = self.read_store()?;
 
         let res = if let Some(mut session_string) = store.get("session") {
             let session: BwSessionData = serde_json::from_str(&session_string)?;
@@ -101,8 +117,8 @@ impl ClientHandler {
         Ok(res)
     }
 
-    async fn session_delete(&self) -> Result<ChannelResponse> {
-        let mut store = self.storage_lock.write().await;
+    fn session_delete(&self) -> Result<ChannelResponse> {
+        let mut store = self.write_store()?;
 
         store.remove("session");
 
@@ -113,8 +129,8 @@ impl ClientHandler {
     // Credentials
     //
 
-    async fn credentials_fetch(&self) -> Result<ChannelResponse> {
-        let store = self.storage_lock.read().await;
+    fn credentials_fetch(&self) -> Result<ChannelResponse> {
+        let store = self.read_store()?;
 
         let res = if let Some(mut creds_string) = store.get("credentials") {
             let creds: BwCredentials = serde_json::from_str(&creds_string)?;
@@ -127,17 +143,17 @@ impl ClientHandler {
         Ok(res)
     }
 
-    async fn credentials_delete(&self) -> Result<ChannelResponse> {
-        let mut store = self.storage_lock.write().await;
+    fn credentials_delete(&self) -> Result<ChannelResponse> {
+        let mut store = self.write_store()?;
 
         store.remove("credentials");
 
         Ok(ChannelResponse::Status(true))
     }
 
-    async fn credentials_store(&self, creds: BwCredentials) -> Result<ChannelResponse> {
-        let mut creds_string = serde_json::to_string(&creds)?;
-        let mut store = self.storage_lock.write().await;
+    fn credentials_store(&self, creds: &BwCredentials) -> Result<ChannelResponse> {
+        let mut creds_string = serde_json::to_string(creds)?;
+        let mut store = self.write_store()?;
 
         let success = store.add("credentials", &creds_string).is_ok();
 
@@ -146,7 +162,7 @@ impl ClientHandler {
         Ok(ChannelResponse::Status(success))
     }
 
-    async fn client_handler(&self, client: UnixStream) -> Result<()> {
+    fn client_handler(&self, client: UnixStream) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
             let verified = verify_client(&client).context("Client verification failed for incoming connection")?;
@@ -156,14 +172,19 @@ impl ClientHandler {
             }
         }
 
-        let mut client = UBWAgent::server(client)
-            .await
-            .context("Failed to initialize server protocol handler for client")?;
+        let mut client = UBWAgent::server(client).context("Failed to initialize server protocol handler for client")?;
 
         loop {
             info!("waiting for a request");
 
-            let req = client.get_request().await.context("Failed to receive request from client")?;
+            let req = match client.get_request() {
+                Ok(req) => req,
+                //
+                // A client that is done with us just closes the socket
+                //
+                Err(Error::Io(e)) if is_disconnect(&e) => break Ok(()),
+                Err(e) => return Err(e).context("Failed to receive request from client"),
+            };
 
             info!("Request: {req}");
 
@@ -173,20 +194,20 @@ impl ClientHandler {
                 //
                 // Session
                 //
-                ChannelRequest::SessionStore(data) => self.session_store(data).await?,
-                ChannelRequest::SessionFetch => self.session_fetch().await?,
-                ChannelRequest::SessionDelete => self.session_delete().await?,
+                ChannelRequest::SessionStore(data) => self.session_store(&data)?,
+                ChannelRequest::SessionFetch => self.session_fetch()?,
+                ChannelRequest::SessionDelete => self.session_delete()?,
                 //
                 // Credentials
                 //
-                ChannelRequest::CredentialsDelete => self.credentials_delete().await?,
-                ChannelRequest::CredentialsFetch => self.credentials_fetch().await?,
-                ChannelRequest::CredentialsStore(creds) => self.credentials_store(creds).await?,
+                ChannelRequest::CredentialsDelete => self.credentials_delete()?,
+                ChannelRequest::CredentialsFetch => self.credentials_fetch()?,
+                ChannelRequest::CredentialsStore(creds) => self.credentials_store(&creds)?,
             };
 
             info!("Response: {res}");
 
-            client.send_response(res).await?;
+            client.send_response(&res)?;
         }
     }
 }
@@ -209,54 +230,59 @@ impl CacheServer {
             CredStorage::new().context("Failed to initialize credential storage")?,
         ));
 
-        Ok(Self { listener, storage_lock })
+        Ok(Self {
+            listener,
+            storage_lock,
+            socket_path,
+        })
     }
 
-    pub async fn accept_loop(&self, mut quit_rx: Receiver<bool>) -> Result<()> {
-        let mut clients_set = JoinSet::new();
+    pub fn socket_path(&self) -> &Path {
+        &self.socket_path
+    }
 
+    /// Serve clients until the listener breaks.
+    ///
+    /// Every client gets its own thread: a client can hold its connection open
+    /// across an interactive password prompt, and the ssh-agent side of the
+    /// daemon is itself a client, so serving them one at a time would deadlock.
+    pub fn accept_loop(&self, shutdown: &Sender<ShutdownReason>) {
         loop {
             info!("accepting clients");
 
-            select! {
-                //
-                // this'll get signaled after a SIGTERM or SIGINT
-                // and we'll break out of the loop so we can return
-                //
-                _ = quit_rx.changed() => break Ok(()),
-                accept_ret = self.listener.accept() => {
-                    let ( client, _ ) = match accept_ret {
-                        Ok(v) => v,
-                        Err(e) => {
-                            error!("accept failure ({e})");
-                            break Err(e.into());
-                        }
-                    };
-
-                    //
-                    // spawn a task for this client
-                    //
-                    let handler = ClientHandler::new( Arc::clone(&self.storage_lock));
-
-                    clients_set.spawn(async move {
-                        handler.client_handler(client).await
-                    });
-                },
-                Some(Ok(client_ret)) = clients_set.join_next() => {
-                    warn!("client disconnected");
-
-                    match client_ret {
-                        Ok(()) => {},
-                        Err(e) => {
-                            if let Some(Error::Shutdown) = e.downcast_ref::<Error>() {
-                                break Ok(());
-                            }
-                            error!("{e}");
-                        }
-                    }
-
+            let client = match self.listener.accept() {
+                Ok((client, _)) => client,
+                Err(e) => {
+                    error!("accept failure ({e})");
+                    signal_shutdown(shutdown, ShutdownReason::ListenerFailed("credentials"));
+                    return;
                 }
+            };
+
+            let handler = ClientHandler::new(Arc::clone(&self.storage_lock));
+            let shutdown = shutdown.clone();
+
+            let spawned = thread::Builder::new()
+                .name("creds-client".into())
+                .spawn(move || handle_client(&handler, client, &shutdown));
+
+            if let Err(e) = spawned {
+                error!("unable to spawn a client thread ({e})");
             }
+        }
+    }
+}
+
+fn handle_client(handler: &ClientHandler, client: UnixStream, shutdown: &Sender<ShutdownReason>) {
+    let ret = handler.client_handler(client);
+
+    warn!("client disconnected");
+
+    if let Err(e) = ret {
+        if let Some(Error::Shutdown) = e.downcast_ref::<Error>() {
+            signal_shutdown(shutdown, ShutdownReason::StopRequested);
+        } else {
+            error!("{e}");
         }
     }
 }

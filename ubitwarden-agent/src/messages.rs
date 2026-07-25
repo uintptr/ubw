@@ -1,7 +1,9 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    io::{Read, Write},
+};
 
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use ubitwarden::{credentials::BwCredentials, error::Result, session::BwSessionData};
 
 use crate::channel::AgentChannelTrait;
@@ -62,13 +64,13 @@ impl Display for ChannelResponse {
 
 impl AgentChannelTrait for ChannelResponse {}
 
-pub async fn send_message<S>(stream: &mut S, message: ChannelRequest) -> Result<ChannelResponse>
+pub fn send_message<S>(stream: &mut S, message: &ChannelRequest) -> Result<ChannelResponse>
 where
-    S: AsyncReadExt + AsyncWriteExt + Unpin,
+    S: Read + Write,
 {
-    message.write(stream).await?;
+    message.write(stream)?;
 
-    let req: ChannelResponse = ChannelResponse::read(stream).await?;
+    let req: ChannelResponse = ChannelResponse::read(stream)?;
 
     Ok(req)
 }

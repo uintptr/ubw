@@ -1,6 +1,6 @@
 use std::{
-    pin::Pin,
-    task::{Context, Poll},
+    cmp::min,
+    io::{self, Read, Write},
 };
 
 use log::info;
@@ -9,27 +9,27 @@ use orion::{
     kex::{EphemeralClientSession, EphemeralServerSession, PublicKey, SessionKeys},
 };
 
-use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use ubitwarden::error::{Error, Result};
 
 use crate::messages::{ChannelRequest, ChannelResponse};
 
 use crate::channel::AgentChannelTrait;
 
+/// A stream where every [`Write::write`] call is sealed into one
+/// length prefixed record, and every record is opened on the way back in.
 #[derive(Debug)]
 pub struct EncryptedChannel<S> {
     stream: S,
     session_keys: SessionKeys,
-    read_buf: Vec<u8>,
+    /// Plaintext of the last record read that didn't fit in the caller's buffer.
     decrypted_buf: Vec<u8>,
-    expected_len: Option<u32>,
 }
 
 impl<S> EncryptedChannel<S>
 where
-    S: AsyncReadExt + AsyncWriteExt + Unpin,
+    S: Read + Write,
 {
-    pub async fn listen(mut stream: S) -> Result<Self> {
+    pub fn listen(mut stream: S) -> Result<Self> {
         let session_server = EphemeralServerSession::new()?;
         let server_public_key = session_server.public_key();
 
@@ -38,7 +38,7 @@ where
         //
         // read the client's public key
         //
-        let req: ChannelRequest = ChannelRequest::read(&mut stream).await?;
+        let req: ChannelRequest = ChannelRequest::read(&mut stream)?;
 
         let ChannelRequest::Hello {
             public_key: peer_public_key,
@@ -54,7 +54,7 @@ where
             public_key: server_public_key_slice.to_vec(),
         };
 
-        resp.write(&mut stream).await?;
+        resp.write(&mut stream)?;
 
         let client_public_key = PublicKey::from_slice(&peer_public_key)?;
         let session_keys: SessionKeys = session_server.establish_with_client(&client_public_key)?;
@@ -64,13 +64,11 @@ where
         Ok(Self {
             stream,
             session_keys,
-            read_buf: Vec::new(),
             decrypted_buf: Vec::new(),
-            expected_len: None,
         })
     }
 
-    pub async fn connect(mut stream: S) -> Result<Self> {
+    pub fn connect(mut stream: S) -> Result<Self> {
         let session_client = EphemeralClientSession::new()?;
         let client_public_key = session_client.public_key().clone();
 
@@ -82,12 +80,12 @@ where
         let msg = ChannelRequest::Hello {
             public_key: client_public_key_slice.to_vec(),
         };
-        msg.write(&mut stream).await?;
+        msg.write(&mut stream)?;
 
         //
         // read the server's public key
         //
-        let res: ChannelResponse = ChannelResponse::read(&mut stream).await?;
+        let res: ChannelResponse = ChannelResponse::read(&mut stream)?;
 
         let ChannelResponse::Hello {
             public_key: peer_public_key,
@@ -104,140 +102,115 @@ where
         Ok(Self {
             stream,
             session_keys,
-            read_buf: Vec::new(),
             decrypted_buf: Vec::new(),
-            expected_len: None,
         })
     }
 }
 
-impl<S> AsyncWrite for EncryptedChannel<S>
+impl<S> Write for EncryptedChannel<S>
 where
-    S: AsyncWrite + Unpin,
+    S: Write,
 {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let cipher = aead::seal(self.session_keys.transport(), buf).map_err(io::Error::other)?;
 
         let len: u32 = cipher.len().try_into().map_err(io::Error::other)?;
 
-        let mut framed = Vec::with_capacity(cipher.len().saturating_add(4));
-        framed.extend_from_slice(&len.to_be_bytes());
-        framed.extend_from_slice(&cipher);
+        self.stream.write_all(&len.to_be_bytes())?;
+        self.stream.write_all(&cipher)?;
 
-        match Pin::new(&mut self.stream).poll_write(cx, &framed) {
-            Poll::Ready(Ok(n)) if n == framed.len() => Poll::Ready(Ok(buf.len())),
-            Poll::Ready(Ok(_)) => Poll::Ready(Err(io::Error::other("partial write"))),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Pending => Poll::Pending,
-        }
+        Ok(buf.len())
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.stream).poll_flush(cx)
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.stream).poll_shutdown(cx)
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
     }
 }
 
-impl<S> AsyncRead for EncryptedChannel<S>
+impl<S> Read for EncryptedChannel<S>
 where
-    S: AsyncRead + Unpin,
+    S: Read,
 {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
-        loop {
-            // If we have decrypted data waiting, return it first
-            if !self.decrypted_buf.is_empty() {
-                let to_copy = std::cmp::min(buf.remaining(), self.decrypted_buf.len());
-                if let Some(slice) = self.decrypted_buf.get(..to_copy) {
-                    buf.put_slice(slice);
-                    self.decrypted_buf.drain(..to_copy);
-                    return Poll::Ready(Ok(()));
-                }
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        //
+        // Records can decrypt to more than the caller asked for, so serve
+        // leftovers first and only pull a new record once we're empty.
+        //
+        while self.decrypted_buf.is_empty() {
+            let mut len_buf = [0u8; 4];
+
+            match self.stream.read_exact(&mut len_buf) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(0),
+                Err(e) => return Err(e),
             }
 
-            // Try to parse length header if we don't have it yet
-            if self.expected_len.is_none()
-                && self.read_buf.len() >= 4
-                && let Some(header) = self.read_buf.get(..4)
-                && let Ok(len_bytes) = <[u8; 4]>::try_from(header)
-            {
-                self.expected_len = Some(u32::from_be_bytes(len_bytes));
-                self.read_buf.drain(..4);
-            }
+            let len = usize::try_from(u32::from_be_bytes(len_buf)).map_err(io::Error::other)?;
 
-            // Try to decrypt if we have enough data
-            if let Some(expected_len) = self.expected_len
-                && self.read_buf.len() >= expected_len as usize
-            {
-                let cipher_len = expected_len as usize;
-                let Some(cipher) = self.read_buf.get(..cipher_len) else {
-                    continue;
-                };
+            let mut cipher = vec![0u8; len];
+            self.stream.read_exact(&mut cipher)?;
 
-                let plaintext = aead::open(self.session_keys.receiving(), cipher).map_err(|_| {
-                    io::Error::other("failed to decrypt message - possible data corruption or key mismatch")
-                })?;
+            self.decrypted_buf = aead::open(self.session_keys.receiving(), &cipher).map_err(|_| {
+                io::Error::other("failed to decrypt message - possible data corruption or key mismatch")
+            })?;
+        }
 
-                self.read_buf.drain(..cipher_len);
-                self.expected_len = None;
+        let to_copy = min(buf.len(), self.decrypted_buf.len());
 
-                // Copy what we can to output, buffer the rest
-                let to_copy = std::cmp::min(buf.remaining(), plaintext.len());
-                if let Some(slice) = plaintext.get(..to_copy) {
-                    buf.put_slice(slice);
-                }
-                if let Some(remaining) = plaintext.get(to_copy..)
-                    && !remaining.is_empty()
-                {
-                    self.decrypted_buf.extend_from_slice(remaining);
-                }
-
-                return Poll::Ready(Ok(()));
-            }
-
-            // Need more data - read from the underlying stream
-            let mut temp_buf = [0u8; 4096];
-            let mut temp_read_buf = ReadBuf::new(&mut temp_buf);
-
-            match Pin::new(&mut self.stream).poll_read(cx, &mut temp_read_buf) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                Poll::Ready(Ok(())) => {
-                    let bytes_read = temp_read_buf.filled();
-                    if bytes_read.is_empty() {
-                        // EOF
-                        return Poll::Ready(Ok(()));
-                    }
-                    self.read_buf.extend_from_slice(bytes_read);
-                    // Loop back to try parsing/decrypting with new data
-                }
-            }
+        if let Some(dst) = buf.get_mut(..to_copy)
+            && let Some(src) = self.decrypted_buf.get(..to_copy)
+        {
+            dst.copy_from_slice(src);
+            self.decrypted_buf.drain(..to_copy);
+            Ok(to_copy)
+        } else {
+            Ok(0)
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{os::unix::net::UnixStream, thread};
+
     use rstaples::logging::StaplesLogger;
-    use tokio::io::duplex;
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_handshake() {
+    #[test]
+    fn test_handshake() {
         StaplesLogger::new()
             .with_colors()
             .with_log_level(log::LevelFilter::Debug)
             .start();
 
-        let (client_stream, server_stream) = duplex(1024);
+        let pair = UnixStream::pair();
+        assert!(pair.is_ok(), "unable to create a socket pair");
 
-        let (server, client) = tokio::join!(
-            EncryptedChannel::listen(server_stream),
-            EncryptedChannel::connect(client_stream)
-        );
+        let Ok((client_stream, server_stream)) = pair else {
+            return;
+        };
+
+        //
+        // the handshake is a round trip, so the peers have to run concurrently
+        //
+        let spawned = thread::Builder::new()
+            .name("handshake-server".into())
+            .spawn(move || EncryptedChannel::listen(server_stream));
+        assert!(spawned.is_ok(), "unable to spawn the server thread");
+
+        let Ok(server_thread) = spawned else {
+            return;
+        };
+
+        let client = EncryptedChannel::connect(client_stream);
+
+        let joined = server_thread.join();
+        assert!(joined.is_ok(), "server thread panicked");
+
+        let Ok(server) = joined else {
+            return;
+        };
 
         assert!(client.is_ok());
         assert!(server.is_ok());

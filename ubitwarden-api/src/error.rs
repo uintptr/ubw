@@ -60,6 +60,8 @@ pub enum Error {
     HelloFailure,
     #[error("Invalid Command Response")]
     InvalidCommandResponse,
+    #[error("Unexpected HTTP status: {0}")]
+    HttpStatus(u16),
 
     //
     // 2d party
@@ -77,7 +79,7 @@ pub enum Error {
     // 3rd party
     //
     #[error(transparent)]
-    HttpError(#[from] reqwest::Error),
+    HttpError(#[from] ureq::Error),
     #[error(transparent)]
     Serialization(#[from] serde_json::Error),
     #[error(transparent)]
@@ -86,10 +88,6 @@ pub enum Error {
     TotpSecretError(#[from] totp_rs::SecretParseError),
     #[error(transparent)]
     TotpUrlError(#[from] totp_rs::TotpUrlError),
-    #[error(transparent)]
-    JoinFailure(#[from] tokio::task::JoinError),
-    #[error(transparent)]
-    SendBoolError(#[from] tokio::sync::watch::error::SendError<bool>),
     #[error(transparent)]
     WhoAmIError(#[from] whoami::Error),
     #[error(transparent)]

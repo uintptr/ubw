@@ -55,20 +55,18 @@ pub struct UserArgs {
     pub command: Commands,
 }
 
-//#[tokio::main(flavor = "current_thread")]
-#[tokio::main]
-async fn tokio_entry(args: UserArgs) -> Result<()> {
+fn run(args: UserArgs) -> Result<()> {
     match args.command {
-        Commands::Auth(auth) => command_auth(auth).await,
-        Commands::Agent(a) => command_agent(a).await,
-        Commands::Ciphers(a) => command_ciphers(a).await,
-        Commands::Cipher(cipher) => command_cipher(cipher.id).await,
-        Commands::Totp(totp) => command_totp(totp.id).await,
-        Commands::Password(pass) => command_password(pass.id).await,
-        Commands::SshKeys => command_ssh_keys().await,
-        Commands::Logins => command_logins().await,
-        Commands::Logout => command_logout().await,
-        Commands::XSecureLock(xss) => command_xsecurelock(xss).await,
+        Commands::Auth(auth) => command_auth(&auth),
+        Commands::Agent(a) => command_agent(&a),
+        Commands::Ciphers(a) => command_ciphers(&a),
+        Commands::Cipher(cipher) => command_cipher(cipher.id),
+        Commands::Totp(totp) => command_totp(totp.id),
+        Commands::Password(pass) => command_password(pass.id),
+        Commands::SshKeys => command_ssh_keys(),
+        Commands::Logins => command_logins(),
+        Commands::Logout => command_logout(),
+        Commands::XSecureLock(xss) => command_xsecurelock(&xss),
     }
 }
 
@@ -141,5 +139,5 @@ fn main() -> Result<()> {
         daemonize()?;
     }
 
-    tokio_entry(args)
+    run(args)
 }

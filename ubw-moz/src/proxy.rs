@@ -14,7 +14,7 @@ use rsa::{Oaep, RsaPublicKey, pkcs8::DecodePublicKey};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sha2::Sha256;
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Stdin, Stdout};
+use std::io::{self, BufReader, BufWriter, Read, Stdin, Stdout, Write};
 use ubitwarden_agent::agent::UBWAgent;
 
 use crate::{biometric::biometric_login, data::init_data_dir};
@@ -181,7 +181,7 @@ impl UBwProxy {
         }
     }
 
-    async fn write_encrypted_message<S>(&self, w: &mut BufWriter<Stdout>, res: S, msg_id: u64) -> Result<()>
+    fn write_encrypted_message<S>(&self, w: &mut BufWriter<Stdout>, res: S, msg_id: u64) -> Result<()>
     where
         S: Serialize,
     {
@@ -205,19 +205,18 @@ impl UBwProxy {
 
             // Write message length prefix (required by native messaging protocol)
             let msg_len: u32 = msg.len().try_into()?;
-            w.write_u32_le(msg_len).await?;
+            w.write_all(&msg_len.to_le_bytes())?;
             w.write_all(msg.as_bytes())
-                .await
                 .context("failed to write encrypted response to stdout")?;
-            w.flush().await?;
+            w.flush()?;
             Ok(())
         } else {
             bail!("Session key missing");
         }
     }
 
-    async fn read_message(&mut self, rdr: &mut BufReader<Stdin>) -> Result<CommandMessage> {
-        let data = read_buffer(rdr).await?;
+    fn read_message(&mut self, rdr: &mut BufReader<Stdin>) -> Result<CommandMessage> {
+        let data = read_buffer(rdr)?;
 
         let msg = if let Ok(req) = serde_json::from_slice::<CommandRequest>(&data) {
             info!("using app_id={}", req.app_id);
@@ -238,7 +237,7 @@ impl UBwProxy {
         Ok(msg)
     }
 
-    async fn setup_encryption(&mut self, w: &mut BufWriter<Stdout>, msg: &CommandMessage) -> Result<()> {
+    fn setup_encryption(&mut self, w: &mut BufWriter<Stdout>, msg: &CommandMessage) -> Result<()> {
         let Some(app_id) = &self.app_id else {
             bail!("Missing app id")
         };
@@ -260,27 +259,26 @@ impl UBwProxy {
         // write len
         //
         let msg_len: u32 = message.len().try_into()?;
-        w.write_u32_le(msg_len).await?;
+        w.write_all(&msg_len.to_le_bytes())?;
         w.write_all(message.as_bytes())
-            .await
             .context("failed to write encryption setup response to stdout")?;
-        w.flush().await?;
+        w.flush()?;
 
         self.session_key = Some(key);
 
         Ok(())
     }
 
-    async fn get_vault_key(&self) -> Result<String> {
-        let mut agent = UBWAgent::client().await?;
-        let session = agent.session_load().await?;
+    fn get_vault_key() -> Result<String> {
+        let mut agent = UBWAgent::client()?;
+        let session = agent.session_load()?;
         Ok(session.export_key())
     }
 
-    async fn cmd_unlock_vault(&self, w: &mut BufWriter<Stdout>, message_id: u64) -> Result<()> {
-        let (response, user_key_b64) = match self.get_vault_key().await {
+    fn cmd_unlock_vault(&self, w: &mut BufWriter<Stdout>, message_id: u64) -> Result<()> {
+        let (response, user_key_b64) = match Self::get_vault_key() {
             Ok(v) => {
-                if let Err(e) = biometric_login().await {
+                if let Err(e) = biometric_login() {
                     error!("biometric failure ({e})");
                     (false, None)
                 } else {
@@ -300,10 +298,10 @@ impl UBwProxy {
             user_key_b64,
         };
 
-        self.write_encrypted_message(w, &res, message_id).await
+        self.write_encrypted_message(w, &res, message_id)
     }
 
-    async fn cmd_biometric_for_user(&self, w: &mut BufWriter<Stdout>, msg_id: u64) -> Result<()> {
+    fn cmd_biometric_for_user(&self, w: &mut BufWriter<Stdout>, msg_id: u64) -> Result<()> {
         let ts: i64 = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis().try_into()?;
 
         let res = GetBiometricStatus {
@@ -313,10 +311,10 @@ impl UBwProxy {
             timestamp: ts,
         };
 
-        self.write_encrypted_message(w, &res, msg_id).await
+        self.write_encrypted_message(w, &res, msg_id)
     }
 
-    async fn cmd_biometric_status(&self, w: &mut BufWriter<Stdout>, msg_id: u64) -> Result<()> {
+    fn cmd_biometric_status(&self, w: &mut BufWriter<Stdout>, msg_id: u64) -> Result<()> {
         let ts: i64 = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis().try_into()?;
 
         let res = GetBiometricStatus {
@@ -326,7 +324,7 @@ impl UBwProxy {
             timestamp: ts,
         };
 
-        self.write_encrypted_message(w, &res, msg_id).await
+        self.write_encrypted_message(w, &res, msg_id)
     }
 }
 
@@ -347,8 +345,12 @@ fn encrypt_message(msg: &CommandMessage, plain: &[u8]) -> Result<String> {
     Ok(BASE64_STANDARD.encode(encrypted_data))
 }
 
-async fn read_buffer(rdr: &mut BufReader<Stdin>) -> Result<Vec<u8>> {
-    let len: usize = rdr.read_u32_le().await?.try_into()?;
+fn read_buffer(rdr: &mut BufReader<Stdin>) -> Result<Vec<u8>> {
+    let mut len_buf = [0u8; 4];
+    rdr.read_exact(&mut len_buf)
+        .context("failed to read the message length from native messaging input")?;
+
+    let len: usize = u32::from_le_bytes(len_buf).try_into()?;
 
     if 0 == len {
         return Err(anyhow!(
@@ -359,13 +361,12 @@ async fn read_buffer(rdr: &mut BufReader<Stdin>) -> Result<Vec<u8>> {
     let mut data = vec![0u8; len];
 
     rdr.read_exact(&mut data)
-        .await
         .with_context(|| format!("failed to read {len} bytes from native messaging input"))?;
 
     Ok(data)
 }
 
-async fn io_loop(mut proxy: UBwProxy) -> Result<()> {
+fn io_loop(mut proxy: UBwProxy) -> Result<()> {
     let stdin = io::stdin();
     let mut rdr = BufReader::new(stdin);
 
@@ -373,15 +374,15 @@ async fn io_loop(mut proxy: UBwProxy) -> Result<()> {
     let mut writer = BufWriter::new(stdout);
 
     loop {
-        let msg = proxy.read_message(&mut rdr).await?;
+        let msg = proxy.read_message(&mut rdr)?;
 
         info!("msg_id={} command={}", msg.message_id, msg.command);
 
         match msg.command.as_str() {
-            "setupEncryption" => proxy.setup_encryption(&mut writer, &msg).await?,
-            "getBiometricsStatus" => proxy.cmd_biometric_status(&mut writer, msg.message_id).await?,
-            "getBiometricsStatusForUser" => proxy.cmd_biometric_for_user(&mut writer, msg.message_id).await?,
-            "unlockWithBiometricsForUser" => proxy.cmd_unlock_vault(&mut writer, msg.message_id).await?,
+            "setupEncryption" => proxy.setup_encryption(&mut writer, &msg)?,
+            "getBiometricsStatus" => proxy.cmd_biometric_status(&mut writer, msg.message_id)?,
+            "getBiometricsStatusForUser" => proxy.cmd_biometric_for_user(&mut writer, msg.message_id)?,
+            "unlockWithBiometricsForUser" => proxy.cmd_unlock_vault(&mut writer, msg.message_id)?,
             _ => {
                 error!("unhandled command {}", msg.command);
                 bail!("unhandled command {}", msg.command)
@@ -390,8 +391,8 @@ async fn io_loop(mut proxy: UBwProxy) -> Result<()> {
     }
 }
 
-pub async fn moz_proxy() -> Result<()> {
-    let data_dir = init_data_dir().await?;
+pub fn moz_proxy() -> Result<()> {
+    let data_dir = init_data_dir()?;
 
     let pid_file = data_dir.join("ubw_moz.pid");
 
@@ -401,7 +402,7 @@ pub async fn moz_proxy() -> Result<()> {
 
     let proxy = UBwProxy::new();
 
-    if let Err(e) = io_loop(proxy).await {
+    if let Err(e) = io_loop(proxy) {
         error!("io_loop() returned {e}");
         return Err(e);
     }

@@ -9,19 +9,14 @@ bitwarden-encoding.workspace = true
 derive_more.workspace = true
 log.workspace = true
 orion.workspace = true
-reqwest.workspace = true
-rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_repr.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 totp-rs.workspace = true
+ureq.workspace = true
 whoami.workspace = true
 zeroize.workspace = true
-
-[dev-dependencies]
-rstaples.workspace = true
 
 [lints]
 workspace = true

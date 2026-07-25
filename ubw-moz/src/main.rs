@@ -9,8 +9,8 @@ use ubw_moz::{
     proxy::moz_proxy,
 };
 
-async fn init_logging() -> Result<()> {
-    let data_dir = init_data_dir().await?;
+fn init_logging() -> Result<()> {
+    let data_dir = init_data_dir()?;
 
     let log_file = data_dir.join("proxy.log");
 
@@ -25,9 +25,8 @@ async fn init_logging() -> Result<()> {
     Ok(())
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<()> {
-    init_logging().await?;
+fn main() -> Result<()> {
+    init_logging()?;
 
     for (i, a) in env::args().enumerate() {
         info!("{i}: {a}");
@@ -44,6 +43,6 @@ async fn main() -> Result<()> {
             _ => bail!("Unknown command {command}"),
         }
     } else {
-        moz_proxy().await
+        moz_proxy()
     }
 }
