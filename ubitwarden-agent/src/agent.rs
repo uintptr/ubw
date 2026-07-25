@@ -65,6 +65,11 @@ mod socket {
         Ok(UnixListener::bind_addr(&address()?)?)
     }
 
+    //
+    // Nothing to clean up: an abstract address has no file behind it. The
+    // Result is here to match the other platform's signature.
+    //
+    #[allow(clippy::unnecessary_wraps)]
     pub fn cleanup_path() -> Result<Option<PathBuf>> {
         Ok(None)
     }
