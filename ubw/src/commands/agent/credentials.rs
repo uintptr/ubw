@@ -1,5 +1,4 @@
 use std::{
-    fs,
     os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, mpsc::Sender},
@@ -12,7 +11,7 @@ use log::{error, info, warn};
 use secrecy::zeroize::Zeroize;
 use ubitwarden::{credentials::BwCredentials, error::Error, session::BwSessionData};
 use ubitwarden_agent::{
-    agent::{UBWAgent, create_socket_name, is_disconnect},
+    agent::{UBWAgent, bind_cache_socket, cache_socket_cleanup_path, is_disconnect},
     messages::{ChannelRequest, ChannelResponse},
 };
 
@@ -35,7 +34,7 @@ struct ClientHandler {
 pub struct CacheServer {
     listener: UnixListener,
     storage_lock: Arc<RwLock<CredStorage>>,
-    socket_path: PathBuf,
+    socket_path: Option<PathBuf>,
 }
 
 #[cfg(target_os = "linux")]
@@ -216,15 +215,9 @@ impl CacheServer {
     pub fn new() -> Result<Self> {
         info!("binding unix socket");
 
-        let socket_path = create_socket_name().context("Failed to determine socket path")?;
+        let listener = bind_cache_socket().context("Failed to bind the credentials cache socket")?;
 
-        if socket_path.exists() {
-            fs::remove_file(&socket_path)
-                .with_context(|| format!("Failed to remove existing socket at {}", socket_path.display()))?;
-        }
-
-        let listener = UnixListener::bind(&socket_path)
-            .with_context(|| format!("Failed to bind Unix socket at {}", socket_path.display()))?;
+        let socket_path = cache_socket_cleanup_path().context("Failed to determine socket path")?;
 
         let storage_lock = Arc::new(RwLock::new(
             CredStorage::new().context("Failed to initialize credential storage")?,
@@ -237,8 +230,10 @@ impl CacheServer {
         })
     }
 
-    pub fn socket_path(&self) -> &Path {
-        &self.socket_path
+    /// The socket to unlink at shutdown, or `None` when the platform doesn't
+    /// keep one on disk.
+    pub fn socket_path(&self) -> Option<&Path> {
+        self.socket_path.as_deref()
     }
 
     /// Serve clients until the listener breaks.

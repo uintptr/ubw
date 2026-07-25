@@ -1,6 +1,6 @@
 use std::{io, ops::Deref, path::PathBuf};
 
-use std::os::unix::net::UnixStream;
+use std::os::unix::net::{UnixListener, UnixStream};
 use ubitwarden::{
     api::BwApi,
     credentials::BwCredentials,
@@ -33,39 +33,110 @@ pub fn is_disconnect(e: &io::Error) -> bool {
 
 pub const UBW_DATA_DIR: &str = env!("CARGO_PKG_NAME");
 
+/// Where the credentials cache listens.
+///
+/// Linux gets an abstract socket, which lives in its own namespace rather than
+/// on disk. That address can't be spelled as a path, so binding and connecting
+/// are platform specific and live here rather than at the call sites.
 #[cfg(target_os = "linux")]
-pub fn create_socket_name() -> Result<PathBuf> {
-    let username = whoami::username()?;
-    let name = format!("\0ubw_{username}");
-    Ok(PathBuf::from(name))
+mod socket {
+    use std::os::linux::net::SocketAddrExt;
+    use std::os::unix::net::{SocketAddr, UnixListener, UnixStream};
+    use std::path::PathBuf;
+
+    use ubitwarden::error::Result;
+
+    fn address() -> Result<SocketAddr> {
+        let username = whoami::username()?;
+        let name = format!("ubw_{username}");
+
+        Ok(SocketAddr::from_abstract_name(name)?)
+    }
+
+    pub fn connect() -> Result<UnixStream> {
+        Ok(UnixStream::connect_addr(&address()?)?)
+    }
+
+    pub fn bind() -> Result<UnixListener> {
+        //
+        // Nothing to unlink first: the kernel drops an abstract address as soon
+        // as the last reference to it goes away.
+        //
+        Ok(UnixListener::bind_addr(&address()?)?)
+    }
+
+    pub fn cleanup_path() -> Result<Option<PathBuf>> {
+        Ok(None)
+    }
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn create_socket_name() -> Result<PathBuf> {
+mod socket {
     use std::fs;
-    use ubitwarden::error::Error;
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::path::PathBuf;
 
-    let data_dir = dirs::data_dir().ok_or(Error::BasenameError)?;
+    use ubitwarden::error::{Error, Result};
 
-    let data_dir = data_dir.join(UBW_DATA_DIR);
+    use crate::agent::UBW_DATA_DIR;
 
-    // create data dir if it doesn't exist
-    if !data_dir.exists() {
-        fs::create_dir_all(&data_dir)?;
+    fn path() -> Result<PathBuf> {
+        let data_dir = dirs::data_dir().ok_or(Error::BasenameError)?;
+
+        let data_dir = data_dir.join(UBW_DATA_DIR);
+
+        // create data dir if it doesn't exist
+        if !data_dir.exists() {
+            fs::create_dir_all(&data_dir)?;
+        }
+
+        let username = whoami::username()?;
+        let socket_name = format!("ubw_{username}");
+        let socket_path = data_dir.join(socket_name);
+
+        Ok(socket_path)
     }
 
-    let username = whoami::username()?;
-    let socket_name = format!("ubw_{username}");
-    let socket_path = data_dir.join(socket_name);
+    pub fn connect() -> Result<UnixStream> {
+        Ok(UnixStream::connect(path()?)?)
+    }
 
-    Ok(socket_path)
+    pub fn bind() -> Result<UnixListener> {
+        let socket_path = path()?;
+
+        //
+        // A socket left behind by a previous run would make bind fail
+        //
+        if socket_path.exists() {
+            fs::remove_file(&socket_path)?;
+        }
+
+        Ok(UnixListener::bind(&socket_path)?)
+    }
+
+    pub fn cleanup_path() -> Result<Option<PathBuf>> {
+        Ok(Some(path()?))
+    }
+}
+
+/// Connect to the credentials cache.
+pub fn connect_cache_socket() -> Result<UnixStream> {
+    socket::connect()
+}
+
+/// Listen for credentials cache clients.
+pub fn bind_cache_socket() -> Result<UnixListener> {
+    socket::bind()
+}
+
+/// The socket file to remove once we stop listening, on platforms that use one.
+pub fn cache_socket_cleanup_path() -> Result<Option<PathBuf>> {
+    socket::cleanup_path()
 }
 
 impl UBWAgent {
     pub fn client() -> Result<Self> {
-        let socket_name = create_socket_name()?;
-
-        let unix_stream = UnixStream::connect(socket_name)?;
+        let unix_stream = connect_cache_socket()?;
         let stream = EncryptedChannel::connect(unix_stream)?;
 
         Ok(Self { stream })

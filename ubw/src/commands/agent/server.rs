@@ -59,9 +59,6 @@ fn signal_handlers(shutdown: &Sender<ShutdownReason>) -> Result<()> {
 }
 
 fn unlink_socket(socket_path: &Path) {
-    //
-    // Linux uses an abstract socket for the cache, which has nothing to unlink
-    //
     if !socket_path.exists() {
         return;
     }
@@ -82,7 +79,7 @@ fn cache_server() -> Result<()> {
     let creds_server = CacheServer::new().context("Failed to initialize credentials cache server")?;
     let ssh_server = SshAgentServer::new().context("Failed to initialize ssh-agent server")?;
 
-    let creds_socket = creds_server.socket_path().to_path_buf();
+    let creds_socket = creds_server.socket_path().map(Path::to_path_buf);
     let ssh_socket = ssh_server.socket_path().to_path_buf();
 
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
@@ -116,7 +113,12 @@ fn cache_server() -> Result<()> {
         Err(e) => error!("every shutdown sender is gone ({e})"),
     }
 
-    unlink_socket(&creds_socket);
+    //
+    // Linux uses an abstract socket for the cache, which has no file to remove
+    //
+    if let Some(creds_socket) = &creds_socket {
+        unlink_socket(creds_socket);
+    }
     unlink_socket(&ssh_socket);
 
     Ok(())
