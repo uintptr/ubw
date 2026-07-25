@@ -1,4 +1,4 @@
-use std::{fs, sync::Once};
+use std::sync::Once;
 
 use log::info;
 use reqwest::Client;
@@ -205,8 +205,6 @@ impl BwApi {
             let ret = self.client.get(ciphers_url).bearer_auth(&auth.access_token).send().await?;
 
             let value = ret.json::<serde_json::Value>().await?;
-
-            fs::write("ciphers.json", value.to_string().as_bytes())?;
 
             let resp: BwCipherResponse = serde_json::from_value(value)?;
 

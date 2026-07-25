@@ -170,7 +170,10 @@ impl TryFrom<BwCipherWire> for BwCipher {
         };
 
         let data = data.ok_or_else(|| {
-            format!("cipher {} has type {} but no matching payload", wire.id, wire.cipher_type)
+            format!(
+                "cipher {} has type {} but no matching payload",
+                wire.id, wire.cipher_type
+            )
         })?;
 
         Ok(Self {
