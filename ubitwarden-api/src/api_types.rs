@@ -1,6 +1,5 @@
 use derive_more::Display;
-use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use serde_repr::Deserialize_repr;
 use zeroize::ZeroizeOnDrop;
 
@@ -39,7 +38,7 @@ pub struct BwSync {
     pub profile: BwProfile,
 }
 
-#[derive(Display, Debug, Deserialize_repr)]
+#[derive(Display, Debug, Clone, Copy, Deserialize_repr)]
 #[repr(u8)]
 pub enum BwCipherType {
     Login = 1,
@@ -127,45 +126,6 @@ pub enum BwCipherData {
     Ssh(BwSshKey),
 }
 
-fn deserialize_cipher_data<'de, D>(deserializer: D) -> Result<BwCipherData, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-
-    let cipher_type = if value.get("totp").is_some() {
-        BwCipherType::Login
-    } else if value.get("keyFingerprint").is_some() {
-        BwCipherType::Ssh
-    } else if value.get("cardholderName").is_some() {
-        BwCipherType::Card
-    } else if value.get("passportNumber").is_some() {
-        BwCipherType::Identity
-    } else if value.get("notes").is_some() {
-        BwCipherType::Note
-    } else {
-        return Err(serde::de::Error::custom("Unsupported data type"));
-    };
-
-    match cipher_type {
-        BwCipherType::Login => serde_json::from_value(value.clone())
-            .map(BwCipherData::Login)
-            .map_err(serde::de::Error::custom),
-        BwCipherType::Note => serde_json::from_value(value.clone())
-            .map(BwCipherData::Note)
-            .map_err(serde::de::Error::custom),
-        BwCipherType::Card => serde_json::from_value(value.clone())
-            .map(BwCipherData::Card)
-            .map_err(serde::de::Error::custom),
-        BwCipherType::Identity => serde_json::from_value(value.clone())
-            .map(BwCipherData::Identity)
-            .map_err(serde::de::Error::custom),
-        BwCipherType::Ssh => serde_json::from_value(value.clone())
-            .map(BwCipherData::Ssh)
-            .map_err(serde::de::Error::custom),
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct BwCipherField {
     pub name: String,
@@ -174,15 +134,63 @@ pub struct BwCipherField {
     pub value: String,
 }
 
+/// Wire format of a cipher as returned by `/api/ciphers` and `/api/sync`.
+///
+/// The server sends the type-specific payload in a sibling key named after the
+/// type (`login`, `secureNote`, ...) rather than in a single `data` object, so
+/// the useful one is picked out by the `type` discriminant.
 #[derive(Debug, Deserialize)]
+struct BwCipherWire {
+    id: String,
+    name: String,
+    #[serde(rename = "deletedDate")]
+    deleted_date: Option<String>,
+    #[serde(rename = "type")]
+    cipher_type: BwCipherType,
+    fields: Option<Vec<BwCipherField>>,
+    login: Option<BwLogin>,
+    #[serde(rename = "secureNote")]
+    secure_note: Option<BwNote>,
+    card: Option<BwCard>,
+    identity: Option<BwIdentity>,
+    #[serde(rename = "sshKey")]
+    ssh_key: Option<BwSshKey>,
+}
+
+impl TryFrom<BwCipherWire> for BwCipher {
+    type Error = String;
+
+    fn try_from(wire: BwCipherWire) -> Result<Self, Self::Error> {
+        let data = match wire.cipher_type {
+            BwCipherType::Login => wire.login.map(BwCipherData::Login),
+            BwCipherType::Note => wire.secure_note.map(BwCipherData::Note),
+            BwCipherType::Card => wire.card.map(BwCipherData::Card),
+            BwCipherType::Identity => wire.identity.map(BwCipherData::Identity),
+            BwCipherType::Ssh => wire.ssh_key.map(BwCipherData::Ssh),
+        };
+
+        let data = data.ok_or_else(|| {
+            format!("cipher {} has type {} but no matching payload", wire.id, wire.cipher_type)
+        })?;
+
+        Ok(Self {
+            id: wire.id,
+            name: wire.name,
+            deleted_data: wire.deleted_date,
+            data,
+            cipher_type: wire.cipher_type,
+            fields: wire.fields.unwrap_or_default(),
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(try_from = "BwCipherWire")]
 pub struct BwCipher {
     pub id: String,
     pub name: String,
-    #[serde(rename = "deletedDate")]
     pub deleted_data: Option<String>,
-    #[serde(deserialize_with = "deserialize_cipher_data")]
     pub data: BwCipherData,
-    #[serde(rename = "type")]
     pub cipher_type: BwCipherType,
     pub fields: Vec<BwCipherField>,
 }
