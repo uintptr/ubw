@@ -3,7 +3,7 @@ resolver = "2"
 members = ["ubitwarden-agent", "ubitwarden-api", "ubw", "ubw-moz"]
 
 [workspace.package]
-version = "0.3.2"
+version = "0.3.3"
 edition = "2024"
 
 [workspace.dependencies]
@@ -26,7 +26,6 @@ localauthentication-rs = "0.1"
 log = "0.4"
 nix = { version = "0.31", features = ["user"] }
 orion = "0.17"
-pidlock = "0.2"
 rand_core = { version = "0.6", features = ["getrandom"] }
 rsa = "0.9"
 rstaples = "0.4"

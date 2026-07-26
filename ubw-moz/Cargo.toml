@@ -15,7 +15,6 @@ cbc.workspace = true
 dirs.workspace = true
 hmac.workspace = true
 log.workspace = true
-pidlock.workspace = true
 rand_core.workspace = true
 rsa.workspace = true
 rstaples.workspace = true

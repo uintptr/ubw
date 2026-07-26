@@ -8,8 +8,7 @@ use cbc::{
     cipher::{BlockDecryptMut, KeyIvInit},
 };
 use hmac::{Hmac, Mac};
-use log::{error, info};
-use pidlock::Pidlock;
+use log::{error, info, warn};
 use rsa::{Oaep, RsaPublicKey, pkcs8::DecodePublicKey};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
@@ -17,7 +16,14 @@ use sha2::Sha256;
 use std::io::{self, BufReader, BufWriter, Read, Stdin, Stdout, Write};
 use ubitwarden_agent::agent::UBWAgent;
 
-use crate::{biometric::biometric_login, data::init_data_dir};
+use crate::biometric::biometric_login;
+
+//
+// The extension waits for this before it considers the native port usable. The real
+// desktop_proxy emits it as soon as it connects to the desktop app's IPC socket, and
+// since 2026-07 the extension gates every biometric command behind having seen it.
+//
+const CONNECTED_MESSAGE: &str = r#"{"command":"connected"}"#;
 
 #[derive(Deserialize)]
 struct CommandMessage {
@@ -79,6 +85,7 @@ struct UnlockVaultStatus<'a> {
     pub response: bool,
     #[serde(rename = "userKeyB64")]
     pub user_key_b64: Option<String>,
+    pub timestamp: i64,
 }
 
 #[derive(Serialize)]
@@ -168,6 +175,12 @@ impl UBwMozSessionKey {
     }
 }
 
+enum Incoming {
+    Command(CommandMessage),
+    Ignored,
+    Eof,
+}
+
 struct UBwProxy {
     session_key: Option<UBwMozSessionKey>,
     app_id: Option<String>,
@@ -203,38 +216,38 @@ impl UBwProxy {
 
             let msg = serde_json::to_string(&response)?;
 
-            // Write message length prefix (required by native messaging protocol)
-            let msg_len: u32 = msg.len().try_into()?;
-            w.write_all(&msg_len.to_le_bytes())?;
-            w.write_all(msg.as_bytes())
-                .context("failed to write encrypted response to stdout")?;
-            w.flush()?;
-            Ok(())
+            write_message(w, &msg).context("failed to write encrypted response to stdout")
         } else {
             bail!("Session key missing");
         }
     }
 
-    fn read_message(&mut self, rdr: &mut BufReader<Stdin>) -> Result<CommandMessage> {
-        let data = read_buffer(rdr)?;
+    //
+    // Incoming::Ignored means the message wasn't meant for us (the extension also opens a
+    // second port for its SDK IPC transport, which speaks a protocol we don't implement).
+    // Those are skipped instead of taking the whole port down with us.
+    //
+    fn read_message(&mut self, rdr: &mut BufReader<Stdin>) -> Result<Incoming> {
+        let Some(data) = read_buffer(rdr)? else {
+            return Ok(Incoming::Eof);
+        };
 
         let msg = if let Ok(req) = serde_json::from_slice::<CommandRequest>(&data) {
             info!("using app_id={}", req.app_id);
             self.app_id = Some(req.app_id);
             req.message
-        } else if let Some(key) = &self.session_key {
-            let enc_req: DecryptRequest = serde_json::from_slice(&data)?;
-
+        } else if let Some(key) = &self.session_key
+            && let Ok(enc_req) = serde_json::from_slice::<DecryptRequest>(&data)
+        {
             let plain_data = key.decrypt_message(&enc_req.message)?;
 
-            let msg: CommandMessage = serde_json::from_slice(&plain_data)?;
-
-            msg
+            serde_json::from_slice::<CommandMessage>(&plain_data)?
         } else {
-            bail!("Missing session key")
+            warn!("ignoring unrecognized message ({} bytes)", data.len());
+            return Ok(Incoming::Ignored);
         };
 
-        Ok(msg)
+        Ok(Incoming::Command(msg))
     }
 
     fn setup_encryption(&mut self, w: &mut BufWriter<Stdout>, msg: &CommandMessage) -> Result<()> {
@@ -255,14 +268,7 @@ impl UBwProxy {
 
         let message = serde_json::to_string(&resp)?;
 
-        //
-        // write len
-        //
-        let msg_len: u32 = message.len().try_into()?;
-        w.write_all(&msg_len.to_le_bytes())?;
-        w.write_all(message.as_bytes())
-            .context("failed to write encryption setup response to stdout")?;
-        w.flush()?;
+        write_message(w, &message).context("failed to write encryption setup response to stdout")?;
 
         self.session_key = Some(key);
 
@@ -291,37 +297,38 @@ impl UBwProxy {
             }
         };
 
+        //
+        // stamped after the (possibly slow) biometric prompt: the extension drops
+        // responses whose timestamp is more than 10 seconds off from its own clock
+        //
         let res = UnlockVaultStatus {
             command: "unlockWithBiometricsForUser",
             response,
             message_id,
             user_key_b64,
+            timestamp: now_ms()?,
         };
 
         self.write_encrypted_message(w, &res, message_id)
     }
 
     fn cmd_biometric_for_user(&self, w: &mut BufWriter<Stdout>, msg_id: u64) -> Result<()> {
-        let ts: i64 = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis().try_into()?;
-
         let res = GetBiometricStatus {
             command: "getBiometricsStatusForUser",
             message_id: msg_id,
             response: 0,
-            timestamp: ts,
+            timestamp: now_ms()?,
         };
 
         self.write_encrypted_message(w, &res, msg_id)
     }
 
     fn cmd_biometric_status(&self, w: &mut BufWriter<Stdout>, msg_id: u64) -> Result<()> {
-        let ts: i64 = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis().try_into()?;
-
         let res = GetBiometricStatus {
             command: "getBiometricsStatus",
             message_id: msg_id,
             response: 0,
-            timestamp: ts,
+            timestamp: now_ms()?,
         };
 
         self.write_encrypted_message(w, &res, msg_id)
@@ -345,17 +352,40 @@ fn encrypt_message(msg: &CommandMessage, plain: &[u8]) -> Result<String> {
     Ok(BASE64_STANDARD.encode(encrypted_data))
 }
 
-fn read_buffer(rdr: &mut BufReader<Stdin>) -> Result<Vec<u8>> {
+fn now_ms() -> Result<i64> {
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis().try_into()?;
+    Ok(ts)
+}
+
+fn write_message(w: &mut BufWriter<Stdout>, msg: &str) -> Result<()> {
+    //
+    // message length prefix (required by the native messaging protocol)
+    //
+    let msg_len: u32 = msg.len().try_into()?;
+    w.write_all(&msg_len.to_le_bytes())?;
+    w.write_all(msg.as_bytes())?;
+    w.flush()?;
+
+    Ok(())
+}
+
+//
+// Ok(None) when the browser closed the port
+//
+fn read_buffer(rdr: &mut BufReader<Stdin>) -> Result<Option<Vec<u8>>> {
     let mut len_buf = [0u8; 4];
-    rdr.read_exact(&mut len_buf)
-        .context("failed to read the message length from native messaging input")?;
+
+    if let Err(e) = rdr.read_exact(&mut len_buf) {
+        if io::ErrorKind::UnexpectedEof == e.kind() {
+            return Ok(None);
+        }
+        return Err(e).context("failed to read the message length from native messaging input");
+    }
 
     let len: usize = u32::from_le_bytes(len_buf).try_into()?;
 
     if 0 == len {
-        return Err(anyhow!(
-            "received zero-length message from native messaging interface (unexpected EOF)"
-        ));
+        return Err(anyhow!("received zero-length message from native messaging interface"));
     }
 
     let mut data = vec![0u8; len];
@@ -363,7 +393,7 @@ fn read_buffer(rdr: &mut BufReader<Stdin>) -> Result<Vec<u8>> {
     rdr.read_exact(&mut data)
         .with_context(|| format!("failed to read {len} bytes from native messaging input"))?;
 
-    Ok(data)
+    Ok(Some(data))
 }
 
 fn io_loop(mut proxy: UBwProxy) -> Result<()> {
@@ -373,8 +403,21 @@ fn io_loop(mut proxy: UBwProxy) -> Result<()> {
     let stdout = io::stdout();
     let mut writer = BufWriter::new(stdout);
 
+    //
+    // unprompted, and before anything else. the extension won't send us a single
+    // command until it has seen it
+    //
+    write_message(&mut writer, CONNECTED_MESSAGE).context("failed to announce the connection")?;
+
     loop {
-        let msg = proxy.read_message(&mut rdr)?;
+        let msg = match proxy.read_message(&mut rdr)? {
+            Incoming::Command(msg) => msg,
+            Incoming::Ignored => continue,
+            Incoming::Eof => {
+                info!("port closed by the browser");
+                return Ok(());
+            }
+        };
 
         info!("msg_id={} command={}", msg.message_id, msg.command);
 
@@ -383,23 +426,16 @@ fn io_loop(mut proxy: UBwProxy) -> Result<()> {
             "getBiometricsStatus" => proxy.cmd_biometric_status(&mut writer, msg.message_id)?,
             "getBiometricsStatusForUser" => proxy.cmd_biometric_for_user(&mut writer, msg.message_id)?,
             "unlockWithBiometricsForUser" => proxy.cmd_unlock_vault(&mut writer, msg.message_id)?,
-            _ => {
-                error!("unhandled command {}", msg.command);
-                bail!("unhandled command {}", msg.command)
-            }
+            _ => error!("unhandled command {}", msg.command),
         }
     }
 }
 
+//
+// No single-instance lock here: the extension opens two native ports (biometrics and
+// its SDK IPC transport), so we get two live processes and neither may kill the other.
+//
 pub fn moz_proxy() -> Result<()> {
-    let data_dir = init_data_dir()?;
-
-    let pid_file = data_dir.join("ubw_moz.pid");
-
-    let mut pid_lock = Pidlock::new_validated(pid_file)?;
-
-    pid_lock.acquire()?;
-
     let proxy = UBwProxy::new();
 
     if let Err(e) = io_loop(proxy) {
