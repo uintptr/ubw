@@ -4,7 +4,7 @@ use bitwarden_encoding::B64;
 use log::{error, info};
 
 use bitwarden_crypto::{EncString, HashPurpose, Kdf, KeyDecryptable, MasterKey, SymmetricCryptoKey};
-use totp_rs::{Algorithm, Secret, TOTP};
+use totp_rs::{Algorithm, Builder, Secret, Totp};
 
 use crate::{
     api_types::BwAuth,
@@ -94,13 +94,13 @@ impl BwCrypt {
 
         if totp_string.starts_with("otpauth://") {
             // Try parsing with validation first
-            let totp = match TOTP::from_url(&totp_string) {
+            let totp = match Totp::from_url(&totp_string) {
                 Ok(v) => v,
                 Err(e) => {
                     // If from_url fails, try the unchecked variant
                     info!("from_url failed ({e}), attempting from_url_unchecked");
 
-                    match TOTP::from_url_unchecked(&totp_string) {
+                    match Totp::from_url_unchecked(&totp_string) {
                         Ok(v) => v,
                         Err(e) => {
                             // If unchecked also fails (e.g., invalid base32 with lowercase),
@@ -123,7 +123,7 @@ impl BwCrypt {
                                 totp_string.clone()
                             };
 
-                            match TOTP::from_url_unchecked(&normalized) {
+                            match Totp::from_url_unchecked(&normalized) {
                                 Ok(v) => v,
                                 Err(e) => {
                                     error!("unable to parse {totp_string} ({e})");
@@ -134,44 +134,30 @@ impl BwCrypt {
                     }
                 }
             };
-            let otp = totp.generate_current()?;
-            Ok(otp)
+            Ok(totp.generate_current().to_string())
         } else {
-            let secret = Secret::Encoded(totp_string.clone()).to_bytes()?;
+            let secret = Secret::try_from_base32(&totp_string)?;
+
+            let builder = Builder::new()
+                .with_algorithm(Algorithm::SHA1)
+                .with_digits(6)
+                .with_skew(1)
+                .with_step_duration(30)
+                .with_secret(secret)
+                .with_issuer(Some("example"))
+                .with_account_name("test@example.com");
 
             // Try with validation first
-            let ret = TOTP::new(
-                Algorithm::SHA1,
-                6,
-                1,
-                30,
-                secret.clone(),
-                Some("example".to_string()),
-                "test@example.com".to_string(),
-            );
-
-            match ret {
-                Ok(v) => {
-                    let otp = v.generate_current()?;
-                    Ok(otp)
-                }
+            let totp = match builder.clone().build() {
+                Ok(v) => v,
                 Err(e) => {
                     // If validation fails (likely due to short secret < 128 bits),
-                    // use the unchecked variant
-                    info!("TOTP::new failed ({e}), attempting new_unchecked for short secret");
-                    let totp = TOTP::new_unchecked(
-                        Algorithm::SHA1,
-                        6,
-                        1,
-                        30,
-                        secret,
-                        Some("example".to_string()),
-                        "test@example.com".to_string(),
-                    );
-                    let otp = totp.generate_current()?;
-                    Ok(otp)
+                    // skip the RFC compliance checks
+                    info!("Builder::build failed ({e}), attempting build_noncompliant for short secret");
+                    builder.build_noncompliant()
                 }
-            }
+            };
+            Ok(totp.generate_current().to_string())
         }
     }
 

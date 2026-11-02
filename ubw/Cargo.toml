@@ -26,6 +26,7 @@ ssh-agent-lib.workspace = true
 tabled.workspace = true
 ubitwarden = { path = "../ubitwarden-api" }
 ubitwarden-agent = { path = "../ubitwarden-agent" }
+zeroize.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true

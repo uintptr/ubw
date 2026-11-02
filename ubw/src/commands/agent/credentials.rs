@@ -188,7 +188,7 @@ impl ClientHandler {
             info!("Request: {req}");
 
             let res = match req {
-                ChannelRequest::Hello { public_key: _ } => bail!("Out of order"),
+                ChannelRequest::Hello { .. } => bail!("Out of order"),
                 ChannelRequest::Stop => break Err(Error::Shutdown.into()),
                 //
                 // Session

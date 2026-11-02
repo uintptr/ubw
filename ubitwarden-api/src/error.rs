@@ -87,7 +87,7 @@ pub enum Error {
     #[error(transparent)]
     TotpSecretError(#[from] totp_rs::SecretParseError),
     #[error(transparent)]
-    TotpUrlError(#[from] totp_rs::TotpUrlError),
+    TotpError(#[from] totp_rs::TotpError),
     #[error(transparent)]
     WhoAmIError(#[from] whoami::Error),
     #[error(transparent)]

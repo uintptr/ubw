@@ -3,57 +3,58 @@ resolver = "2"
 members = ["ubitwarden-agent", "ubitwarden-api", "ubw", "ubw-moz"]
 
 [workspace.package]
-version = "0.3.3"
+version = "0.4.0"
 edition = "2024"
 
 [workspace.dependencies]
-aes = "0.8"
+aes = "0.9"
 anyhow = { version = "1.0", features = ["backtrace"] }
-base64 = "0.22"
-bitwarden-crypto = "2.0"
-bitwarden-encoding = "2.0"
-cbc = "0.1"
+base64 = "0.23"
+bitwarden-crypto = "4.0"
+bitwarden-encoding = "4.0"
+cbc = "0.2"
 clap = { version = "4.6", features = ["derive", "env"] }
 daemonize = "0.5"
 derive_more = { version = "2.1", features = ["display"] }
 dialoguer = "0.12"
-dirs = "6.0"
-ed25519-dalek = "2.2"
+dirs = "7.0"
+ed25519-dalek = "3.0"
 figlet-rs = "1.0"
-hmac = "0.12"
+hmac = "0.13"
+getrandom = "0.4"
 libc = "0.2"
 localauthentication-rs = "0.1"
 log = "0.4"
 nix = { version = "0.31", features = ["user"] }
-orion = "0.17"
-rand_core = { version = "0.6", features = ["getrandom"] }
-rsa = "0.9"
+orion = "0.18"
+rsa = { version = "0.9", features = ["getrandom"] }
 rstaples = "0.4"
 secrecy = "0.10"
 security-framework = "3.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_repr = "0.1"
+# rsa 0.9 (latest stable) is still on digest 0.10, and sha1 is only used for its OAEP padding.
 sha1 = "0.10"
-sha2 = "0.10"
-signal-hook = "0.3"
-signature = "2.2"
+sha2 = "0.11"
+signal-hook = "0.4"
+signature = "3.0"
 # default-features would pull the tokio based agent server in; we only need
 # the wire protocol types and run our own blocking accept loop.
-ssh-agent-lib = { version = "0.5", default-features = false }
-tabled = "0.20"
+ssh-agent-lib = { version = "0.6", default-features = false }
+tabled = "0.22"
 thiserror = "2.0"
-totp-rs = { version = "5.7", features = ["otpauth"] }
+totp-rs = { version = "6.0", features = ["otpauth"] }
 # "rustls" pulls in ring as the crypto provider, keeping aws-lc-sys out of the
 # build. "platform-verifier" keeps validating certificates against the OS trust
 # store, like reqwest's rustls-no-provider used to.
 ureq = {
-  version = "3.3",
+  version = "3.5",
   default-features = false,
   features = ["platform-verifier", "rustls"]
 }
 whoami = "2"
-x11rb = { version = "0.13", features = ["allow-unsafe-code", "randr"] }
+x11rb = { version = "0.14", features = ["allow-unsafe-code", "randr"] }
 zeroize = "1.9"
 
 #

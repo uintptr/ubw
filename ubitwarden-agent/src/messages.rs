@@ -10,7 +10,10 @@ use crate::channel::AgentChannelTrait;
 
 #[derive(Serialize, Deserialize)]
 pub enum ChannelRequest {
-    Hello { public_key: Vec<u8> },
+    /// The client's ephemeral X-Wing encapsulation key.
+    Hello {
+        encapsulation_key: Vec<u8>,
+    },
     Stop,
 
     // session
@@ -45,7 +48,10 @@ impl AgentChannelTrait for ChannelRequest {}
 pub enum ChannelResponse {
     Status(bool),
     Error(String),
-    Hello { public_key: Vec<u8> },
+    /// The KEM ciphertext encapsulated to the client's key.
+    Hello {
+        ciphertext: Vec<u8>,
+    },
     SessionFetch(BwSessionData),
     CredentialsFetch(BwCredentials),
 }

@@ -19,6 +19,7 @@ use ssh_agent_lib::{
 use ubitwarden::api::BwApi;
 use ubitwarden::api_types::{BwCipherData, BwSshKey};
 use ubitwarden::session::BwSession;
+use zeroize::Zeroizing;
 
 use log::{error, info, warn};
 use ubitwarden_agent::agent::UBWAgent;
@@ -238,7 +239,7 @@ impl BwSshAgent {
             };
 
             identities.push(Identity {
-                pubkey: public_key.into(),
+                credential: KeyData::from(public_key).into(),
                 comment,
             });
         }
@@ -247,7 +248,7 @@ impl BwSshAgent {
         identities
     }
 
-    fn sign(&self, request: SignRequest) -> Result<Signature> {
+    fn sign(&self, request: &SignRequest) -> Result<Signature> {
         // If session binding is set, we should validate it here
         // The session binding data would typically be used to ensure the signature
         // is only valid for the specific SSH session that was bound
@@ -258,8 +259,9 @@ impl BwSshAgent {
             // This is typically done by the SSH server, but the agent can log it.
         }
 
-        // Convert request pubkey to PublicKey for comparison
-        let request_pubkey: PublicKey = <KeyData as Into<PublicKey>>::into(request.pubkey);
+        // Convert the request credential to a PublicKey for comparison. For a
+        // certificate this is the certified key, which is what we hold.
+        let request_pubkey: PublicKey = request.credential.key_data().clone().into();
 
         // this'll lookup the cache first and fallback on asking the server
         let private_key = self.find_key(&request_pubkey).context("No matching private key found")?;
@@ -268,10 +270,14 @@ impl BwSshAgent {
         // For SSH agent protocol, we need to create a raw cryptographic signature
         // not an SSH signature format (which includes namespace)
         if let KeypairData::Ed25519(ed25519_keypair) = private_key.key_data() {
-            // Convert to ed25519_dalek SigningKey
-            let signing_key: ed25519_dalek::SigningKey = ed25519_keypair
-                .try_into()
-                .map_err(|e| anyhow!("Failed to convert Ed25519 key: {e}"))?;
+            // ssh-key only converts to ed25519-dalek 2, so build the
+            // SigningKey from the seed and check it matches the public half.
+            let seed = Zeroizing::new(ed25519_keypair.private.to_bytes());
+            let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+
+            if signing_key.verifying_key().as_bytes() != ed25519_keypair.public.as_ref() {
+                bail!("Failed to convert Ed25519 key: public key mismatch");
+            }
 
             // Sign the data directly
             let sig: ed25519_dalek::Signature = signing_key.sign(&request.data);
@@ -328,7 +334,7 @@ impl BwSshAgent {
     fn handle(&mut self, request: Request) -> Response {
         match request {
             Request::RequestIdentities => Response::IdentitiesAnswer(Self::request_identities()),
-            Request::SignRequest(request) => match self.sign(request) {
+            Request::SignRequest(request) => match self.sign(&request) {
                 Ok(signature) => Response::SignResponse(signature),
                 Err(e) => {
                     error!("unable to sign ({e})");

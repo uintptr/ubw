@@ -5,9 +5,9 @@ use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine, prelude::BASE64_STANDARD};
 use cbc::{
     Decryptor,
-    cipher::{BlockDecryptMut, KeyIvInit},
+    cipher::{BlockModeDecrypt, KeyIvInit},
 };
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use log::{error, info, warn};
 use rsa::{Oaep, RsaPublicKey, pkcs8::DecodePublicKey};
 use serde::{Deserialize, Serialize};
@@ -102,11 +102,11 @@ struct UBwMozSessionKey {
 }
 
 impl UBwMozSessionKey {
-    fn new() -> Self {
+    fn new() -> Result<Self> {
         let mut key = vec![0u8; 64]; // Generate a 64-byte (512-bit) session key
-        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut key);
+        getrandom::fill(&mut key)?;
 
-        Self { key }
+        Ok(Self { key })
     }
 
     pub fn decrypt_message(&self, encrypted: &EncryptedMessage) -> Result<Vec<u8>> {
@@ -128,7 +128,7 @@ impl UBwMozSessionKey {
         // Decrypt AES-256-CBC
         let cipher = Decryptor::<Aes256>::new_from_slices(enc_key, &iv)?;
         let decrypted = cipher
-            .decrypt_padded_vec_mut::<cbc::cipher::block_padding::Pkcs7>(&data)
+            .decrypt_padded_vec::<cbc::cipher::block_padding::Pkcs7>(&data)
             .map_err(|e| anyhow::anyhow!("Decryption padding error: {e}"))?;
 
         Ok(decrypted)
@@ -137,11 +137,11 @@ impl UBwMozSessionKey {
     pub fn encrypt(&self, msg: &[u8]) -> Result<EncryptedMessage> {
         use cbc::{
             Encryptor,
-            cipher::{BlockEncryptMut, KeyIvInit},
+            cipher::{BlockModeEncrypt, KeyIvInit},
         };
         // Generate random 16-byte IV
         let mut iv = vec![0u8; 16];
-        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut iv);
+        getrandom::fill(&mut iv)?;
 
         // Split session key: first 32 bytes = encryption key, last 32 bytes = MAC key
         let enc_key = self.key.get(0..32).ok_or_else(|| anyhow!("Invalid key size"))?;
@@ -149,7 +149,7 @@ impl UBwMozSessionKey {
 
         // Encrypt AES-256-CBC with PKCS7 padding
         let cipher = Encryptor::<Aes256>::new_from_slices(enc_key, &iv)?;
-        let encrypted_data = cipher.encrypt_padded_vec_mut::<cbc::cipher::block_padding::Pkcs7>(msg);
+        let encrypted_data = cipher.encrypt_padded_vec::<cbc::cipher::block_padding::Pkcs7>(msg);
 
         // Compute HMAC-SHA256
         let mut hmac = Hmac::<Sha256>::new_from_slice(mac_key)?;
@@ -255,7 +255,7 @@ impl UBwProxy {
             bail!("Missing app id")
         };
 
-        let key = UBwMozSessionKey::new();
+        let key = UBwMozSessionKey::new()?;
 
         let encrypted_key = encrypt_message(msg, &key.key)?;
 
@@ -336,7 +336,7 @@ impl UBwProxy {
 }
 
 fn encrypt_message(msg: &CommandMessage, plain: &[u8]) -> Result<String> {
-    let mut rng = rand_core::OsRng;
+    let mut rng = rsa::rand_core::OsRng;
 
     let der_key = if let Some(public_key) = &msg.public_key {
         BASE64_STANDARD.decode(public_key.as_bytes())?

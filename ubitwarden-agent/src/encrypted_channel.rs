@@ -5,8 +5,9 @@ use std::{
 
 use log::info;
 use orion::{
-    aead,
-    kex::{EphemeralClientSession, EphemeralServerSession, PublicKey, SessionKeys},
+    aead::{self, SecretKey},
+    hazardous::kdf::hkdf::{Hkdf, SHA256},
+    kem::{Ciphertext, EncapsulationKey, KP, KeyPair, SharedSecret},
 };
 
 use ubitwarden::error::{Error, Result};
@@ -14,6 +15,50 @@ use ubitwarden::error::{Error, Result};
 use crate::messages::{ChannelRequest, ChannelResponse};
 
 use crate::channel::AgentChannelTrait;
+
+const KDF_SALT: &[u8] = b"ubitwarden-agent encrypted channel v2";
+const CLIENT_TO_SERVER_INFO: &[u8] = b"client to server";
+const SERVER_TO_CLIENT_INFO: &[u8] = b"server to client";
+
+/// One key per direction, so the two peers never seal with the same key.
+#[derive(Debug)]
+struct SessionKeys {
+    /// Key used to seal outgoing records.
+    transport: SecretKey,
+    /// Key used to open incoming records.
+    receiving: SecretKey,
+}
+
+impl SessionKeys {
+    fn derive_key(shared_secret: &SharedSecret, info: &[u8]) -> Result<SecretKey> {
+        let mut key = [0u8; 32];
+        Hkdf::<SHA256>::derive_key(KDF_SALT, shared_secret.unprotected_as_ref(), Some(info), &mut key)?;
+        let key = SecretKey::try_from(&key)?;
+        Ok(key)
+    }
+
+    fn client(shared_secret: &SharedSecret) -> Result<Self> {
+        Ok(Self {
+            transport: Self::derive_key(shared_secret, CLIENT_TO_SERVER_INFO)?,
+            receiving: Self::derive_key(shared_secret, SERVER_TO_CLIENT_INFO)?,
+        })
+    }
+
+    fn server(shared_secret: &SharedSecret) -> Result<Self> {
+        Ok(Self {
+            transport: Self::derive_key(shared_secret, SERVER_TO_CLIENT_INFO)?,
+            receiving: Self::derive_key(shared_secret, CLIENT_TO_SERVER_INFO)?,
+        })
+    }
+
+    const fn transport(&self) -> &SecretKey {
+        &self.transport
+    }
+
+    const fn receiving(&self) -> &SecretKey {
+        &self.receiving
+    }
+}
 
 /// A stream where every [`Write::write`] call is sealed into one
 /// length prefixed record, and every record is opened on the way back in.
@@ -25,39 +70,42 @@ pub struct EncryptedChannel<S> {
     decrypted_buf: Vec<u8>,
 }
 
+//
+// Handshake (X-Wing KEM, the hybrid ML-KEM-768 + X25519 replacement for the
+// removed orion::kex):
+//
+//   client -> server  Hello { encapsulation_key }  fresh ephemeral key pair
+//   server -> client  Hello { ciphertext }          encapsulated shared secret
+//
+// Both sides then derive one key per direction from the shared secret with HKDF-SHA256.
+//
 impl<S> EncryptedChannel<S>
 where
     S: Read + Write,
 {
     pub fn listen(mut stream: S) -> Result<Self> {
-        let session_server = EphemeralServerSession::new()?;
-        let server_public_key = session_server.public_key();
-
-        let server_public_key_slice = server_public_key.to_bytes();
-
         //
-        // read the client's public key
+        // read the client's encapsulation key
         //
         let req: ChannelRequest = ChannelRequest::read(&mut stream)?;
 
-        let ChannelRequest::Hello {
-            public_key: peer_public_key,
-        } = req
-        else {
+        let ChannelRequest::Hello { encapsulation_key } = req else {
             return Err(Error::KeyAgreementFailure);
         };
 
+        let encapsulation_key = EncapsulationKey::try_from(encapsulation_key.as_slice())?;
+        let (shared_secret, ciphertext) = encapsulation_key.encap()?;
+
         //
-        // Send our public key
+        // Send the ciphertext back so the client can decapsulate the same secret
         //
         let resp = ChannelResponse::Hello {
-            public_key: server_public_key_slice.to_vec(),
+            ciphertext: ciphertext.as_ref().to_vec(),
         };
 
         resp.write(&mut stream)?;
 
-        let client_public_key = PublicKey::from_slice(&peer_public_key)?;
-        let session_keys: SessionKeys = session_server.establish_with_client(&client_public_key)?;
+        let session_keys = SessionKeys::server(&shared_secret)?;
 
         info!("server handshake completed");
 
@@ -69,33 +117,28 @@ where
     }
 
     pub fn connect(mut stream: S) -> Result<Self> {
-        let session_client = EphemeralClientSession::new()?;
-        let client_public_key = session_client.public_key().clone();
-
-        let client_public_key_slice = client_public_key.to_bytes();
+        let key_pair = KeyPair::generate()?;
 
         //
-        // Send out public key across
+        // Send our encapsulation key across
         //
         let msg = ChannelRequest::Hello {
-            public_key: client_public_key_slice.to_vec(),
+            encapsulation_key: key_pair.public().as_ref().to_vec(),
         };
         msg.write(&mut stream)?;
 
         //
-        // read the server's public key
+        // read the server's ciphertext
         //
         let res: ChannelResponse = ChannelResponse::read(&mut stream)?;
 
-        let ChannelResponse::Hello {
-            public_key: peer_public_key,
-        } = res
-        else {
+        let ChannelResponse::Hello { ciphertext } = res else {
             return Err(Error::KeyAgreementFailure);
         };
 
-        let server_public_key = PublicKey::from_slice(&peer_public_key)?;
-        let session_keys: SessionKeys = session_client.establish_with_server(&server_public_key)?;
+        let ciphertext = Ciphertext::try_from(ciphertext.as_slice())?;
+        let shared_secret = key_pair.decap(&ciphertext)?;
+        let session_keys = SessionKeys::client(&shared_secret)?;
 
         info!("client handshake completed");
 
