@@ -43,16 +43,17 @@ const ERROR: u32 = 0x00E0_6C75;
 // card layout (pixels, relative to the card's top-left corner)
 //
 const CARD_MIN_WIDTH: u16 = 480;
-const CARD_HEIGHT: u16 = 264;
+const CARD_HEIGHT: u16 = 290;
 const CARD_RADIUS: u16 = 18;
 const CARD_PAD: i16 = 40;
 const ICON_TOP: i16 = 30;
-const PROMPT_BASELINE: i16 = 122;
-const FIELD_TOP: i16 = 144;
+const TITLE_BASELINE: i16 = 120;
+const SUBTITLE_BASELINE: i16 = 147;
+const FIELD_TOP: i16 = 170;
 const FIELD_HEIGHT: u16 = 52;
 const FIELD_RADIUS: u16 = 12;
 const FIELD_INNER_PAD: i16 = 18;
-const STATUS_BASELINE: i16 = 234;
+const STATUS_BASELINE: i16 = 260;
 const DOT_RADIUS: u16 = 7;
 const DOT_SPACING: i16 = 26;
 
@@ -229,12 +230,14 @@ struct LockScreen {
     card_width: u16,
     title_font: Font,
     small_font: Font,
-    prompt: Vec<u8>,
-    prompt_width: i16,
+    title: Vec<u8>,
+    title_width: i16,
+    subtitle: Vec<u8>,
+    subtitle_width: i16,
 }
 
 impl LockScreen {
-    fn new(prompt: &str) -> Result<Self> {
+    fn new(title: &str, subtitle: &str) -> Result<Self> {
         let window = parse_window_id()?;
         info!("Using window={window} (0x{window:x})");
 
@@ -280,12 +283,15 @@ impl LockScreen {
         let title_font = open_first_font(&conn, TITLE_FONTS)?;
         let small_font = open_first_font(&conn, SMALL_FONTS)?;
 
-        let prompt = latin1(prompt);
-        let prompt_width = text_width(&conn, title_font, &prompt)?;
+        let title = latin1(title);
+        let title_width = text_width(&conn, title_font, &title)?;
+        let subtitle = latin1(subtitle);
+        let subtitle_width = text_width(&conn, small_font, &subtitle)?;
 
-        // wide enough for the prompt, but never wider than the narrowest monitor
+        // wide enough for the text, but never wider than the narrowest monitor
         let narrowest = monitors.iter().map(|m| m.width).min().unwrap_or(CARD_MIN_WIDTH);
-        let card_width = to_u16(prompt_width.saturating_add(CARD_PAD.saturating_mul(3)))
+        let text_width = title_width.max(subtitle_width);
+        let card_width = to_u16(text_width.saturating_add(CARD_PAD.saturating_mul(3)))
             .max(CARD_MIN_WIDTH)
             .min(narrowest.saturating_sub(32));
 
@@ -313,8 +319,10 @@ impl LockScreen {
             card_width,
             title_font,
             small_font,
-            prompt,
-            prompt_width,
+            title,
+            title_width,
+            subtitle,
+            subtitle_width,
         };
 
         // paint the backdrop once; afterwards only the cards change
@@ -541,9 +549,17 @@ impl LockScreen {
             self.title_font,
             TEXT,
             CARD,
-            PROMPT_BASELINE,
-            &self.prompt,
-            self.prompt_width,
+            TITLE_BASELINE,
+            &self.title,
+            self.title_width,
+        )?;
+        self.draw_text_centered(
+            self.small_font,
+            MUTED,
+            CARD,
+            SUBTITLE_BASELINE,
+            &self.subtitle,
+            self.subtitle_width,
         )?;
         self.draw_field(chars, phase, accent)?;
         let status_width = text_width(&self.conn, self.small_font, status)?;
@@ -650,8 +666,18 @@ fn store_password(args: &XSecureLockArgs, password: &str) -> Result<()> {
     Ok(())
 }
 
+/// Login name of the user running the lock, for the card's title
+fn local_username() -> String {
+    nix::unistd::User::from_uid(nix::unistd::getuid())
+        .ok()
+        .flatten()
+        .map(|u| u.name)
+        .or_else(|| env::var("USER").ok())
+        .unwrap_or_else(|| "Locked".to_string())
+}
+
 pub fn command_xsecurelock(args: &XSecureLockArgs) -> Result<()> {
-    let screen = LockScreen::new(&format!("Password for {}", args.email))?;
+    let screen = LockScreen::new(&local_username(), &format!("Bitwarden \u{b7} {}", args.email))?;
 
     let password_bytes = screen.read_password()?;
     let chars = char_count(&password_bytes);
